@@ -193,80 +193,6 @@ func (ptr *nodeRef) addChild(b byte, child nodeRef) {
 	}
 }
 
-func (t *Tree[K, V]) insert(n nodeRef, ref *nodeRef, key string, leaf nodeRef, depth int) {
-	if ref.pointer == nil {
-		*ref = leaf
-		return
-	}
-
-	if ref.tag == nodeKindLeaf {
-		nl := (*nodeLeaf[K, V])(ref.pointer)
-		leafKeyStr := unsafe.String(nl.key, nl.len)
-
-		if strings.Compare(key, leafKeyStr) == 0 {
-			return
-		}
-
-		newNode := new(node4)
-
-		longestPrefix := longestCommonPrefix(leafKeyStr, key, depth)
-		newNode.prefixLen = uint32(longestPrefix)
-
-		copy(newNode.prefix[:], key[depth:])
-
-		*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
-
-		splitPrefix := int(depth + longestPrefix)
-		newNode.addChild(ref, leafKeyStr[splitPrefix], n)
-		newNode.addChild(ref, key[splitPrefix], leaf)
-		return
-	}
-
-	node := ref.node()
-	if node.prefixLen != 0 {
-		prefixDiff := prefixMismatch[K, V](n, key, len(key), depth)
-
-		if prefixDiff >= int(node.prefixLen) {
-			depth += int(node.prefixLen)
-			goto RECURSE_SEARCH
-		}
-
-		newNode := new(node4)
-
-		*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
-
-		newNode.prefixLen = uint32(prefixDiff)
-		copy(newNode.prefix[:], node.prefix[:])
-
-		if node.prefixLen <= maxPrefixLen {
-			newNode.addChild(ref, node.prefix[prefixDiff], n)
-			loLimit := prefixDiff + 1
-			node.prefixLen -= uint32(loLimit)
-			copy(node.prefix[:], node.prefix[loLimit:])
-		} else {
-			node.prefixLen -= uint32(prefixDiff + 1)
-			leafMin := minimum[K, V](n)
-			leafKeyStr := unsafe.String(leafMin.key, leafMin.len)
-			newNode.addChild(ref, leafKeyStr[depth+prefixDiff], n)
-			loLimit := depth + prefixDiff + 1
-			copy(node.prefix[:], leafKeyStr[loLimit:])
-		}
-
-		newNode.addChild(ref, key[depth+prefixDiff], leaf)
-		return
-	}
-
-RECURSE_SEARCH:
-	child := ref.findChild(key[depth])
-	if child != nil {
-		t.insert(*child, child, key, leaf, depth+1)
-		return
-	}
-
-	ref.addChild(key[depth], leaf)
-	return
-}
-
 func (t *Tree[K, V]) Insert(key K, val V) {
 	keyStr := string(key) + string(t.end)
 	leaf := &nodeLeaf[K, V]{
@@ -275,7 +201,86 @@ func (t *Tree[K, V]) Insert(key K, val V) {
 		len:   uint32(len(keyStr)),
 	}
 	leafRef := nodeRef{pointer: unsafe.Pointer(leaf), tag: nodeKindLeaf}
-	t.insert(t.root, &t.root, keyStr, leafRef, 0)
+	n := t.root
+
+	if t.root.pointer == nil {
+		t.root = leafRef
+		return
+	}
+
+	ref := &t.root
+	depth := 0
+
+	for {
+		if ref.tag == nodeKindLeaf {
+			nl := (*nodeLeaf[K, V])(ref.pointer)
+			leafKeyStr := unsafe.String(nl.key, nl.len)
+
+			if strings.Compare(keyStr, leafKeyStr) == 0 {
+				return
+			}
+
+			newNode := new(node4)
+
+			longestPrefix := longestCommonPrefix(leafKeyStr, keyStr, depth)
+			newNode.prefixLen = uint32(longestPrefix)
+
+			copy(newNode.prefix[:], keyStr[depth:])
+
+			*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
+
+			splitPrefix := int(depth + longestPrefix)
+			newNode.addChild(ref, leafKeyStr[splitPrefix], n)
+			newNode.addChild(ref, keyStr[splitPrefix], leafRef)
+			return
+		}
+
+		node := ref.node()
+		if node.prefixLen != 0 {
+			prefixDiff := prefixMismatch[K, V](n, keyStr, len(key), depth)
+
+			if prefixDiff >= int(node.prefixLen) {
+				depth += int(node.prefixLen)
+				goto CONTINUE_SEARCH
+			}
+
+			newNode := new(node4)
+
+			*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
+
+			newNode.prefixLen = uint32(prefixDiff)
+			copy(newNode.prefix[:], node.prefix[:])
+
+			if node.prefixLen <= maxPrefixLen {
+				newNode.addChild(ref, node.prefix[prefixDiff], n)
+				loLimit := prefixDiff + 1
+				node.prefixLen -= uint32(loLimit)
+				copy(node.prefix[:], node.prefix[loLimit:])
+			} else {
+				node.prefixLen -= uint32(prefixDiff + 1)
+				leafMin := minimum[K, V](n)
+				leafKeyStr := unsafe.String(leafMin.key, leafMin.len)
+				newNode.addChild(ref, leafKeyStr[depth+prefixDiff], n)
+				loLimit := depth + prefixDiff + 1
+				copy(node.prefix[:], leafKeyStr[loLimit:])
+			}
+
+			newNode.addChild(ref, keyStr[depth+prefixDiff], leafRef)
+			return
+		}
+
+	CONTINUE_SEARCH:
+		child := ref.findChild(keyStr[depth])
+		if child != nil {
+			n = *child
+			ref = child
+			depth++
+			continue
+		}
+
+		ref.addChild(keyStr[depth], leafRef)
+		return
+	}
 }
 
 func (n *node) checkPrefix(key string, depth int) int {
