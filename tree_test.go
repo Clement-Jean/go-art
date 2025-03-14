@@ -92,10 +92,48 @@ func TestTreeInsert(t *testing.T) {
 	}
 }
 
-func TestTreeInsertSearch(t *testing.T) {
+func TestTreeInsertSearchWords(t *testing.T) {
 	var tr Tree[string, int]
 
 	file, err := os.Open("testdata/words.txt")
+	if err != nil {
+		t.Fatalf("failed to open file: %s", err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		tr.Insert(line, len(line))
+	}
+
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("error reading file: %s", err)
+	}
+
+	if _, err := file.Seek(0, 0); err != nil {
+		t.Fatalf("error seeking file: %s", err)
+	}
+
+	scanner = bufio.NewScanner(file)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if _, ok := tr.Search(line); !ok {
+			t.Fatalf("word %s not found", line)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("error reading file: %s", err)
+	}
+}
+
+func TestTreeInsertSearchUUIDs(t *testing.T) {
+	var tr Tree[string, int]
+
+	file, err := os.Open("testdata/uuid.txt")
 	if err != nil {
 		t.Fatalf("failed to open file: %s", err)
 	}
