@@ -26,11 +26,6 @@ const (
 	nodeKind256                       // NODE_256
 )
 
-type nodeRef struct {
-	pointer unsafe.Pointer
-	tag     nodeKind
-}
-
 type node struct {
 	prefixLen   uint32
 	childrenLen uint8
@@ -39,6 +34,97 @@ type node struct {
 
 type nodeKey interface {
 	string | []byte | []rune
+}
+
+type nodeRef struct {
+	pointer unsafe.Pointer
+	tag     nodeKind
+}
+
+func (ref *nodeRef) node() *node {
+	switch nodeKind(ref.tag) {
+	case nodeKind4:
+		n4 := (*node4)(ref.pointer)
+		return &n4.node
+
+	case nodeKind16:
+		n16 := (*node16)(ref.pointer)
+		return &n16.node
+
+	case nodeKind48:
+		n48 := (*node48)(ref.pointer)
+		return &n48.node
+
+	case nodeKind256:
+		n256 := (*node256)(ref.pointer)
+		return &n256.node
+
+	default:
+		panic("shouldn't be possible!")
+	}
+}
+
+func (ref *nodeRef) findChild(b byte) *nodeRef {
+	switch nodeKind(ref.tag) {
+	case nodeKind4:
+		n4 := (*node4)(ref.pointer)
+
+		for i := uint8(0); i < n4.childrenLen; i++ {
+			if n4.keys[i] == b {
+				return &n4.children[i]
+			}
+		}
+
+	case nodeKind16:
+		n16 := (*node16)(ref.pointer)
+
+		if idx := searchNode16(&n16.keys, n16.childrenLen, b); idx != -1 {
+			return &n16.children[idx]
+		}
+
+	case nodeKind48:
+		n48 := (*node48)(ref.pointer)
+
+		i := n48.keys[b]
+		if i != 0 {
+			return &n48.children[i-1]
+		}
+
+	case nodeKind256:
+		n256 := (*node256)(ref.pointer)
+
+		if n256.children[b].pointer != nil {
+			return &n256.children[b]
+		}
+
+	default:
+		panic("shouldn't be possible!")
+	}
+
+	return nil
+}
+
+func (ptr *nodeRef) addChild(b byte, child nodeRef) {
+	switch nodeKind(ptr.tag) {
+	case nodeKind4:
+		n4 := (*node4)(ptr.pointer)
+		n4.addChild(ptr, b, child)
+
+	case nodeKind16:
+		n16 := (*node16)(ptr.pointer)
+		n16.addChild(ptr, b, child)
+
+	case nodeKind48:
+		n48 := (*node48)(ptr.pointer)
+		n48.addChild(ptr, b, child)
+
+	case nodeKind256:
+		n256 := (*node256)(ptr.pointer)
+		n256.addChild(b, child)
+
+	default:
+		panic("shouldn't be possible!")
+	}
 }
 
 type node4 struct {
