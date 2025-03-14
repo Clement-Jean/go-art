@@ -1,8 +1,6 @@
 package art
 
-import (
-	"unsafe"
-)
+import "unsafe"
 
 const (
 	minNode4     = uint8(2)
@@ -28,6 +26,11 @@ const (
 	nodeKind256                       // NODE_256
 )
 
+type nodeRef struct {
+	pointer unsafe.Pointer
+	tag     nodeKind
+}
+
 type node struct {
 	prefixLen   uint32
 	childrenLen uint8
@@ -41,23 +44,22 @@ type nodeKey interface {
 type node4 struct {
 	node
 	keys     [maxNode4]byte
-	children [maxNode4]taggedPointer
+	children [maxNode4]nodeRef
 }
 
-func (n4 *node4) addChild(ref *taggedPointer, b byte, child taggedPointer) *node16 {
+func (n4 *node4) addChild(ref *nodeRef, b byte, child nodeRef) {
 	if n4.childrenLen < maxNode4 {
 		var idx uint32
 
-		for idx = range uint32(n4.childrenLen) {
+		for idx = 0; idx < uint32(n4.childrenLen); idx++ {
 			if b < n4.keys[idx] {
 				break
 			}
 		}
 
 		loLimit := idx + 1
-		hiLimit := idx + uint32(n4.childrenLen)
-		copy(n4.keys[loLimit:], n4.keys[idx:hiLimit])
-		copy(n4.children[loLimit:], n4.children[idx:hiLimit])
+		copy(n4.keys[loLimit:], n4.keys[idx:])
+		copy(n4.children[loLimit:], n4.children[idx:])
 
 		n4.keys[idx] = b
 		n4.children[idx] = child
@@ -65,35 +67,32 @@ func (n4 *node4) addChild(ref *taggedPointer, b byte, child taggedPointer) *node
 	} else {
 		n16 := new(node16)
 
-		copy(n16.keys[:], n4.keys[:])
-		copy(n16.children[:], n4.children[:])
+		copy(n16.keys[:n4.childrenLen], n4.keys[:])
+		copy(n16.children[:n4.childrenLen], n4.children[:])
 
 		n16.childrenLen = n4.childrenLen
 		n16.prefixLen = n4.prefixLen
 		copy(n16.prefix[:], n4.prefix[:])
 
-		*ref = taggedPointerPack(unsafe.Pointer(n16), uintptr(nodeKind16))
+		*ref = nodeRef{pointer: unsafe.Pointer(n16), tag: nodeKind16}
 		n16.addChild(ref, b, child)
-		return n16
 	}
-	return nil
 }
 
 type node16 struct {
 	node
 	keys     [maxNode16]byte
-	children [maxNode16]taggedPointer
+	children [maxNode16]nodeRef
 }
 
-func (n16 *node16) addChild(ref *taggedPointer, b byte, child taggedPointer) *node48 {
+func (n16 *node16) addChild(ref *nodeRef, b byte, child nodeRef) {
 	if n16.childrenLen < maxNode16 {
 		idx := searchNode16(&n16.keys, n16.childrenLen, b)
 
 		if idx != -1 {
 			loLimit := idx + 1
-			hiLimit := idx + int(n16.childrenLen)
-			copy(n16.keys[loLimit:], n16.keys[idx:hiLimit])
-			copy(n16.children[loLimit:], n16.children[idx:hiLimit])
+			copy(n16.keys[loLimit:], n16.keys[idx:])
+			copy(n16.children[loLimit:], n16.children[idx:])
 		} else {
 			idx = int(n16.childrenLen)
 		}
@@ -104,7 +103,7 @@ func (n16 *node16) addChild(ref *taggedPointer, b byte, child taggedPointer) *no
 	} else {
 		n48 := new(node48)
 
-		copy(n48.children[:], n16.children[:])
+		copy(n48.children[:n16.childrenLen], n16.children[:])
 		for i := uint8(0); i < n16.childrenLen; i++ {
 			n48.keys[n16.keys[i]] = i + 1
 		}
@@ -113,23 +112,21 @@ func (n16 *node16) addChild(ref *taggedPointer, b byte, child taggedPointer) *no
 		n48.prefixLen = n16.prefixLen
 		copy(n48.prefix[:], n16.prefix[:])
 
-		*ref = taggedPointerPack(unsafe.Pointer(n48), uintptr(nodeKind48))
+		*ref = nodeRef{pointer: unsafe.Pointer(n48), tag: nodeKind48}
 		n48.addChild(ref, b, child)
-		return n48
 	}
-	return nil
 }
 
 type node48 struct {
 	node
 	keys     [256]byte
-	children [maxNode48]taggedPointer
+	children [maxNode48]nodeRef
 }
 
-func (n48 *node48) addChild(ref *taggedPointer, b byte, child taggedPointer) *node256 {
+func (n48 *node48) addChild(ref *nodeRef, b byte, child nodeRef) {
 	if n48.childrenLen < maxNode48 {
 		pos := uint8(0)
-		for n48.children[pos].pointer() != nil {
+		for n48.children[pos].pointer != nil {
 			pos++
 		}
 
@@ -139,7 +136,7 @@ func (n48 *node48) addChild(ref *taggedPointer, b byte, child taggedPointer) *no
 	} else {
 		n256 := new(node256)
 
-		for i := range maxNode256 {
+		for i := 0; i < maxNode256; i++ {
 			if n48.keys[i] != 0 {
 				n256.children[i] = n48.children[n48.keys[i]-1]
 			}
@@ -149,17 +146,14 @@ func (n48 *node48) addChild(ref *taggedPointer, b byte, child taggedPointer) *no
 		n256.prefixLen = n48.prefixLen
 		copy(n256.prefix[:], n48.prefix[:])
 
-		*ref = taggedPointerPack(unsafe.Pointer(n256), uintptr(nodeKind256))
+		*ref = nodeRef{pointer: unsafe.Pointer(n256), tag: nodeKind256}
 		n256.addChild(b, child)
-		return n256
 	}
-
-	return nil
 }
 
 type node256 struct {
 	node
-	children [maxNode256]taggedPointer
+	children [maxNode256]nodeRef
 }
 
 type nodeLeaf[K nodeKey, V any] struct {
@@ -168,7 +162,7 @@ type nodeLeaf[K nodeKey, V any] struct {
 	len   uint32
 }
 
-func (n256 *node256) addChild(b byte, child taggedPointer) {
+func (n256 *node256) addChild(b byte, child nodeRef) {
 	if n256.childrenLen == 255 {
 		panic("cannot grow anymore...")
 	}
