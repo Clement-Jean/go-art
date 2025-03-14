@@ -522,6 +522,30 @@ func TestRecursiveInsert(t *testing.T) {
 	}
 }
 
+func BenchmarkInsert(b *testing.B) {
+	var tr Tree[string, int]
+
+	file, err := os.Open("testdata/words.txt")
+	if err != nil {
+		b.Fatalf("failed to open file: %s", err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	var lines []string
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		lines = append(lines, line)
+	}
+
+	for b.Loop() {
+		for i := 0; i < len(lines); i++ {
+			tr.Insert(lines[i], len(lines[i]))
+		}
+	}
+}
+
 func BenchmarkSearch16(b *testing.B) {
 	var tr Tree[string, int]
 	tr.Insert("hello", 1)
