@@ -163,10 +163,6 @@ type nodeLeaf[K nodeKey, V any] struct {
 }
 
 func (n256 *node256) addChild(b byte, child nodeRef) {
-	if n256.childrenLen == 255 {
-		panic("cannot grow anymore...")
-	}
-
 	n256.childrenLen++
 	n256.children[b] = child
 }

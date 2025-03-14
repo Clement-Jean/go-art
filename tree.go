@@ -1,7 +1,6 @@
 package art
 
 import (
-	"log"
 	"strings"
 	"unsafe"
 )
@@ -52,10 +51,6 @@ func minimum[K nodeKey, V any](ref nodeRef) *nodeLeaf[K, V] {
 			idx++
 		}
 		idx = int(n48.keys[idx]) - 1
-
-		if idx >= int(maxNode48) {
-			panic("YUP ERROR TOO")
-		}
 
 		return minimum[K, V](n48.children[idx])
 	case nodeKind256:
@@ -120,10 +115,6 @@ func (ref *nodeRef) findChild(b byte) *nodeRef {
 
 		i := n48.keys[b]
 		if i != 0 {
-			if i-1 >= maxNode48 {
-				log.Fatalf("%d\n", i-1)
-			}
-
 			return &n48.children[i-1]
 		}
 
@@ -256,10 +247,6 @@ func (t *Tree[K, V]) insert(n nodeRef, ref *nodeRef, key K, val V, depth int) {
 	}
 
 RECURSE_SEARCH:
-	if depth >= len(key) {
-		log.Fatalf("%s %d\n", keyStr, depth)
-	}
-
 	child := ref.findChild(keyStr[depth])
 	if child != nil {
 		t.insert(*child, child, key, val, depth+1)
