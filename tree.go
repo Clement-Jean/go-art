@@ -67,7 +67,7 @@ func minimum[K nodeKey, V any](ref nodeRef) *nodeLeaf[K, V] {
 }
 
 func prefixMismatch[K nodeKey, V any](n nodeRef, key string, keyLen, depth int) int {
-	node := (*node)(n.pointer)
+	node := n.node()
 	maxCmp := min(int(min(maxPrefixLen, node.prefixLen)), keyLen-depth)
 
 	var idx int
@@ -90,6 +90,29 @@ func prefixMismatch[K nodeKey, V any](n nodeRef, key string, keyLen, depth int) 
 	}
 
 	return idx
+}
+
+func (ref *nodeRef) node() *node {
+	switch nodeKind(ref.tag) {
+	case nodeKind4:
+		n4 := (*node4)(ref.pointer)
+		return &n4.node
+
+	case nodeKind16:
+		n16 := (*node16)(ref.pointer)
+		return &n16.node
+
+	case nodeKind48:
+		n48 := (*node48)(ref.pointer)
+		return &n48.node
+
+	case nodeKind256:
+		n256 := (*node256)(ref.pointer)
+		return &n256.node
+
+	default:
+		panic("shouldn't be possible!")
+	}
 }
 
 func (ref *nodeRef) findChild(b byte) *nodeRef {
@@ -193,20 +216,13 @@ func (t *Tree[K, V]) insert(n nodeRef, ref *nodeRef, key K, val V, depth int) {
 		}
 		lr := nodeRef{pointer: unsafe.Pointer(leaf), tag: nodeKindLeaf}
 
-		//println(nodeKind(ref.tag()).String())
 		splitPrefix := int(depth + longestPrefix)
-		//		if splitPrefix < len(leafKeyStr) {
 		newNode.addChild(ref, leafKeyStr[splitPrefix], n)
-		//}
-		//if splitPrefix < len(key) {
 		newNode.addChild(ref, keyStr[splitPrefix], lr)
-		//}
-		//println(unsafe.String(&newNode.prefix[0], newNode.prefixLen))
 		return
 	}
 
-	node := (*node)(ref.pointer)
-
+	node := ref.node()
 	if node.prefixLen != 0 {
 		prefixDiff := prefixMismatch[K, V](n, keyStr, len(key), depth)
 
@@ -306,7 +322,7 @@ func (t *Tree[K, V]) Search(key K) (V, bool) {
 			return notFound, false
 		}
 
-		node := (*node)(n.pointer)
+		node := n.node()
 		if node.prefixLen != 0 {
 			prefixLen := node.checkPrefix(keyStr, depth)
 

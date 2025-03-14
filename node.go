@@ -42,9 +42,9 @@ type nodeKey interface {
 }
 
 type node4 struct {
-	node
-	keys     [maxNode4]byte
 	children [maxNode4]nodeRef
+	node
+	keys [maxNode4]byte
 }
 
 func (n4 *node4) addChild(ref *nodeRef, b byte, child nodeRef) {
@@ -80,9 +80,9 @@ func (n4 *node4) addChild(ref *nodeRef, b byte, child nodeRef) {
 }
 
 type node16 struct {
-	node
-	keys     [maxNode16]byte
 	children [maxNode16]nodeRef
+	node
+	keys [maxNode16]byte
 }
 
 func (n16 *node16) addChild(ref *nodeRef, b byte, child nodeRef) {
@@ -118,9 +118,9 @@ func (n16 *node16) addChild(ref *nodeRef, b byte, child nodeRef) {
 }
 
 type node48 struct {
-	node
-	keys     [256]byte
 	children [maxNode48]nodeRef
+	node
+	keys [256]byte
 }
 
 func (n48 *node48) addChild(ref *nodeRef, b byte, child nodeRef) {
@@ -152,8 +152,8 @@ func (n48 *node48) addChild(ref *nodeRef, b byte, child nodeRef) {
 }
 
 type node256 struct {
-	node
 	children [maxNode256]nodeRef
+	node
 }
 
 type nodeLeaf[K nodeKey, V any] struct {
