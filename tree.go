@@ -7,10 +7,25 @@ import (
 
 type Tree[K nodeKey, V any] struct {
 	root nodeRef
+	end  byte
 }
 
-func New[K nodeKey, V any]() Tree[K, V] {
-	return Tree[K, V]{}
+func New[K nodeKey, V any](opts ...func(*Tree[K, V])) *Tree[K, V] {
+	t := &Tree[K, V]{
+		end: '\x00',
+	}
+
+	for _, opt := range opts {
+		opt(t)
+	}
+
+	return t
+}
+
+func WithEndByte[K nodeKey, V any](b byte) func(*Tree[K, V]) {
+	return func(t *Tree[K, V]) {
+		t.end = b
+	}
 }
 
 func longestCommonPrefix(key, other string, depth int) int {
@@ -178,17 +193,9 @@ func (ptr *nodeRef) addChild(b byte, child nodeRef) {
 	}
 }
 
-func (t *Tree[K, V]) insert(n nodeRef, ref *nodeRef, key K, val V, depth int) {
-	keyStr := string(key) + "\000"
-
+func (t *Tree[K, V]) insert(n nodeRef, ref *nodeRef, key string, leaf nodeRef, depth int) {
 	if ref.pointer == nil {
-		leaf := &nodeLeaf[K, V]{
-			key:   unsafe.StringData(keyStr),
-			value: val,
-			len:   uint32(len(keyStr)),
-		}
-
-		*ref = nodeRef{pointer: unsafe.Pointer(leaf), tag: nodeKindLeaf}
+		*ref = leaf
 		return
 	}
 
@@ -196,35 +203,28 @@ func (t *Tree[K, V]) insert(n nodeRef, ref *nodeRef, key K, val V, depth int) {
 		nl := (*nodeLeaf[K, V])(ref.pointer)
 		leafKeyStr := unsafe.String(nl.key, nl.len)
 
-		if strings.Compare(keyStr, leafKeyStr) == 0 {
+		if strings.Compare(key, leafKeyStr) == 0 {
 			return
 		}
 
 		newNode := new(node4)
 
-		longestPrefix := longestCommonPrefix(leafKeyStr, keyStr, depth)
+		longestPrefix := longestCommonPrefix(leafKeyStr, key, depth)
 		newNode.prefixLen = uint32(longestPrefix)
 
-		copy(newNode.prefix[:], keyStr[depth:])
+		copy(newNode.prefix[:], key[depth:])
 
 		*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
 
-		leaf := &nodeLeaf[K, V]{
-			key:   unsafe.StringData(keyStr),
-			value: val,
-			len:   uint32(len(keyStr)),
-		}
-		lr := nodeRef{pointer: unsafe.Pointer(leaf), tag: nodeKindLeaf}
-
 		splitPrefix := int(depth + longestPrefix)
 		newNode.addChild(ref, leafKeyStr[splitPrefix], n)
-		newNode.addChild(ref, keyStr[splitPrefix], lr)
+		newNode.addChild(ref, key[splitPrefix], leaf)
 		return
 	}
 
 	node := ref.node()
 	if node.prefixLen != 0 {
-		prefixDiff := prefixMismatch[K, V](n, keyStr, len(key), depth)
+		prefixDiff := prefixMismatch[K, V](n, key, len(key), depth)
 
 		if prefixDiff >= int(node.prefixLen) {
 			depth += int(node.prefixLen)
@@ -252,36 +252,30 @@ func (t *Tree[K, V]) insert(n nodeRef, ref *nodeRef, key K, val V, depth int) {
 			copy(node.prefix[:], leafKeyStr[loLimit:])
 		}
 
-		leaf := &nodeLeaf[K, V]{
-			key:   unsafe.StringData(keyStr),
-			value: val,
-			len:   uint32(len(keyStr)),
-		}
-		lr := nodeRef{pointer: unsafe.Pointer(leaf), tag: nodeKindLeaf}
-		newNode.addChild(ref, keyStr[depth+prefixDiff], lr)
+		newNode.addChild(ref, key[depth+prefixDiff], leaf)
 		return
 	}
 
 RECURSE_SEARCH:
-	child := ref.findChild(keyStr[depth])
+	child := ref.findChild(key[depth])
 	if child != nil {
-		t.insert(*child, child, key, val, depth+1)
+		t.insert(*child, child, key, leaf, depth+1)
 		return
 	}
 
+	ref.addChild(key[depth], leaf)
+	return
+}
+
+func (t *Tree[K, V]) Insert(key K, val V) {
+	keyStr := string(key) + string(t.end)
 	leaf := &nodeLeaf[K, V]{
 		key:   unsafe.StringData(keyStr),
 		value: val,
 		len:   uint32(len(keyStr)),
 	}
-	lr := nodeRef{pointer: unsafe.Pointer(leaf), tag: nodeKindLeaf}
-
-	ref.addChild(keyStr[depth], lr)
-	return
-}
-
-func (t *Tree[K, V]) Insert(key K, val V) {
-	t.insert(t.root, &t.root, key, val, 0)
+	leafRef := nodeRef{pointer: unsafe.Pointer(leaf), tag: nodeKindLeaf}
+	t.insert(t.root, &t.root, keyStr, leafRef, 0)
 }
 
 func (n *node) checkPrefix(key string, depth int) int {
@@ -308,7 +302,7 @@ func (l *nodeLeaf[K, V]) leafMatches(key string) int {
 func (t *Tree[K, V]) Search(key K) (V, bool) {
 	var notFound V
 
-	keyStr := string(key) + "\000"
+	keyStr := string(key) + string(t.end)
 	n := t.root
 	depth := 0
 
