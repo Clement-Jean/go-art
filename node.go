@@ -1,6 +1,8 @@
 package art
 
-import "unsafe"
+import (
+	"unsafe"
+)
 
 const (
 	minNode4     = uint8(2)
@@ -127,6 +129,29 @@ func (ptr *nodeRef) addChild(b byte, child nodeRef) {
 	}
 }
 
+func (ptr *nodeRef) deleteChild(b byte) {
+	switch nodeKind(ptr.tag) {
+	case nodeKind4:
+		n4 := (*node4)(ptr.pointer)
+		n4.deleteChild(ptr, b)
+
+	case nodeKind16:
+		n16 := (*node16)(ptr.pointer)
+		n16.deleteChild(ptr, b)
+
+	case nodeKind48:
+		n48 := (*node48)(ptr.pointer)
+		n48.deleteChild(ptr, b)
+
+	case nodeKind256:
+		n256 := (*node256)(ptr.pointer)
+		n256.deleteChild(ptr, b)
+
+	default:
+		panic("shouldn't be possible!")
+	}
+}
+
 type node4 struct {
 	children [maxNode4]nodeRef
 	node
@@ -162,6 +187,43 @@ func (n4 *node4) addChild(ref *nodeRef, b byte, child nodeRef) {
 
 		*ref = nodeRef{pointer: unsafe.Pointer(n16), tag: nodeKind16}
 		n16.addChild(ref, b, child)
+	}
+}
+
+func (n4 *node4) deleteChild(ref *nodeRef, b byte) {
+	pos := -1
+	for i, key := range n4.keys {
+		if b == key {
+			pos = i
+			break
+		}
+	}
+	copy(n4.keys[pos:], n4.keys[pos+1:])
+	copy(n4.children[pos:], n4.children[pos+1:])
+	n4.childrenLen--
+
+	if n4.childrenLen == 1 {
+		child := n4.children[0]
+
+		if child.tag != nodeKindLeaf {
+			prefix := n4.prefixLen
+			childNode := child.node()
+
+			if prefix < maxPrefixLen {
+				n4.prefix[prefix] = n4.keys[0]
+				prefix++
+			}
+
+			if prefix < maxPrefixLen {
+				subPrefix := min(childNode.prefixLen, maxPrefixLen-prefix)
+				copy(n4.prefix[prefix:], childNode.prefix[:])
+				prefix += subPrefix
+			}
+
+			copy(childNode.prefix[prefix:], childNode.prefix[:])
+			childNode.prefixLen += n4.prefixLen + 1
+		}
+		*ref = child
 	}
 }
 
@@ -203,6 +265,29 @@ func (n16 *node16) addChild(ref *nodeRef, b byte, child nodeRef) {
 	}
 }
 
+func (n16 *node16) deleteChild(ref *nodeRef, b byte) {
+	pos := searchNode16(&n16.keys, n16.childrenLen, b)
+
+	copy(n16.keys[pos:], n16.keys[pos+1:])
+	copy(n16.children[pos:], n16.children[pos+1:])
+	n16.childrenLen--
+
+	if n16.childrenLen == 3 {
+		n4 := new(node4)
+		*ref = nodeRef{
+			pointer: unsafe.Pointer(n4),
+			tag:     nodeKind4,
+		}
+
+		n4.childrenLen = n16.childrenLen
+		n4.prefixLen = n16.prefixLen
+		copy(n4.prefix[:], n16.prefix[:])
+
+		copy(n4.keys[:], n16.keys[:])
+		copy(n4.children[:], n16.children[:])
+	}
+}
+
 type node48 struct {
 	children [maxNode48]nodeRef
 	node
@@ -237,6 +322,35 @@ func (n48 *node48) addChild(ref *nodeRef, b byte, child nodeRef) {
 	}
 }
 
+func (n48 *node48) deleteChild(ref *nodeRef, b byte) {
+	pos := n48.keys[b]
+	n48.keys[b] = 0
+	n48.children[pos-1].pointer = nil
+	n48.childrenLen--
+
+	if n48.childrenLen == 12 {
+		n16 := new(node16)
+		*ref = nodeRef{
+			pointer: unsafe.Pointer(n16),
+			tag:     nodeKind16,
+		}
+
+		n16.childrenLen = n48.childrenLen
+		n16.prefixLen = n48.prefixLen
+		copy(n16.prefix[:], n48.prefix[:])
+
+		children := 0
+		for i := 0; i < 256; i++ {
+			pos = n48.keys[i]
+			if pos != 0 {
+				n16.keys[children] = uint8(i)
+				n16.children[children] = n48.children[pos-1]
+				children++
+			}
+		}
+	}
+}
+
 type node256 struct {
 	children [maxNode256]nodeRef
 	node
@@ -251,4 +365,30 @@ type nodeLeaf[K nodeKey, V any] struct {
 func (n256 *node256) addChild(b byte, child nodeRef) {
 	n256.childrenLen++
 	n256.children[b] = child
+}
+
+func (n256 *node256) deleteChild(ref *nodeRef, b byte) {
+	n256.children[b].pointer = nil
+	n256.childrenLen--
+
+	if n256.childrenLen == 37 {
+		n48 := new(node48)
+		*ref = nodeRef{
+			pointer: unsafe.Pointer(n48),
+			tag:     nodeKind48,
+		}
+
+		n48.childrenLen = n256.childrenLen
+		n48.prefixLen = n256.prefixLen
+		copy(n48.prefix[:], n256.prefix[:])
+
+		pos := 0
+		for i := 0; i < 256; i++ {
+			if n256.children[i].pointer != nil {
+				n48.children[pos] = n256.children[i]
+				n48.keys[i] = uint8(pos + 1)
+				pos++
+			}
+		}
+	}
 }

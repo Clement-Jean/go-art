@@ -6,19 +6,21 @@ import (
 	"os"
 	"testing"
 	"unsafe"
+
+	"slices"
 )
 
 func TestLongestCommonPrefix(t *testing.T) {
 	tests := []struct {
-		key, other string
+		key, other []byte
 		depth      int
 		expected   int
 	}{
-		{"A", "a", 0, 0},
-		{"saab", "sad", 0, 2},
-		{"saab", "sad", 1, 1},
-		{"saab", "sad", 2, 0},
-		{"saab", "saab", 0, 4},
+		{[]byte("A"), []byte("a"), 0, 0},
+		{[]byte("saab"), []byte("sad"), 0, 2},
+		{[]byte("saab"), []byte("sad"), 1, 1},
+		{[]byte("saab"), []byte("sad"), 2, 0},
+		{[]byte("saab"), []byte("saab"), 0, 4},
 	}
 
 	for _, test := range tests {
@@ -29,7 +31,7 @@ func TestLongestCommonPrefix(t *testing.T) {
 }
 
 func TestTreeInsertVeryLong(t *testing.T) {
-	var tr Tree[[]byte, int]
+	tr := New[[]byte, int]()
 	key1 := []byte{16, 0, 0, 0, 7, 10, 0, 0, 0, 2, 17, 10, 0, 0, 0, 120, 10, 0, 0, 0, 120, 10, 0,
 		0, 0, 216, 10, 0, 0, 0, 202, 10, 0, 0, 0, 194, 10, 0, 0, 0, 224, 10, 0, 0, 0,
 		230, 10, 0, 0, 0, 210, 10, 0, 0, 0, 206, 10, 0, 0, 0, 208, 10, 0, 0, 0, 232,
@@ -72,7 +74,7 @@ func TestTreeInsertVeryLong(t *testing.T) {
 }
 
 func TestTreeInsert(t *testing.T) {
-	var tr Tree[string, int]
+	tr := New[string, int]()
 
 	file, err := os.Open("testdata/words.txt")
 	if err != nil {
@@ -93,7 +95,7 @@ func TestTreeInsert(t *testing.T) {
 }
 
 func TestTreeInsertSearchWords(t *testing.T) {
-	var tr Tree[string, int]
+	tr := New[string, int]()
 
 	file, err := os.Open("testdata/words.txt")
 	if err != nil {
@@ -131,7 +133,7 @@ func TestTreeInsertSearchWords(t *testing.T) {
 }
 
 func TestTreeInsertSearchUUIDs(t *testing.T) {
-	var tr Tree[string, int]
+	tr := New[string, int]()
 
 	file, err := os.Open("testdata/uuid.txt")
 	if err != nil {
@@ -168,8 +170,58 @@ func TestTreeInsertSearchUUIDs(t *testing.T) {
 	}
 }
 
+func TestTreeInsertDeleteWords(t *testing.T) {
+	tr := New[string, int]()
+
+	file, err := os.Open("testdata/words.txt")
+	if err != nil {
+		t.Fatalf("failed to open file: %s", err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		tr.Insert(line, len(line))
+	}
+
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("error reading file: %s", err)
+	}
+
+	if _, err := file.Seek(0, 0); err != nil {
+		t.Fatalf("error seeking file: %s", err)
+	}
+
+	scanner = bufio.NewScanner(file)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		tr.Delete(line)
+	}
+
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("error reading file: %s", err)
+	}
+
+	scanner = bufio.NewScanner(file)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if _, ok := tr.Search(line); ok {
+			t.Fatalf("word %s found", line)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("error reading file: %s", err)
+	}
+}
+
 func TestTree1Insert(t *testing.T) {
-	var tr Tree[string, int]
+	tr := New[string, int]()
+
 	tr.Insert("hello", 1)
 
 	if tr.root.pointer == nil {
@@ -195,8 +247,43 @@ func TestTree1Insert(t *testing.T) {
 	}
 }
 
+func TestTree1Insert1Delete(t *testing.T) {
+	tr := New[string, int]()
+
+	tr.Insert("hello", 1)
+
+	if tr.root.pointer == nil {
+		t.Error("expected a root node, got nil")
+	}
+
+	if nodeKind(tr.root.tag) != nodeKindLeaf {
+		t.Errorf("expected a tag of %s, got %s", nodeKindLeaf, nodeKind(tr.root.tag))
+	}
+
+	n4 := (*nodeLeaf[string, int])(tr.root.pointer)
+
+	if got := unsafe.String(n4.key, n4.len); got != "hello\000" {
+		t.Errorf("expected key to be 'hello', got %q", got)
+	}
+
+	if got := n4.value; got != 1 {
+		t.Errorf("expected value to be 1, got %d", got)
+	}
+
+	if _, ok := tr.Search("hello"); !ok {
+		t.Fatalf("didn't find hello after insert")
+	}
+
+	tr.Delete("hello")
+
+	if _, ok := tr.Search("hello"); ok {
+		t.Fatalf("found hello after delete")
+	}
+}
+
 func TestTree2InsertsSameLen(t *testing.T) {
-	var tr Tree[string, int]
+	tr := New[string, int]()
+
 	tr.Insert("hello", 1)
 	tr.Insert("hella", 2)
 
@@ -238,7 +325,8 @@ func TestTree2InsertsSameLen(t *testing.T) {
 }
 
 func TestTree2Inserts(t *testing.T) {
-	var tr Tree[string, int]
+	tr := New[string, int]()
+
 	tr.Insert("hello", 1)
 	tr.Insert("hel", 2)
 
@@ -280,7 +368,8 @@ func TestTree2Inserts(t *testing.T) {
 }
 
 func TestInsert3Times(t *testing.T) {
-	var tr Tree[string, int]
+	tr := New[string, int]()
+
 	tr.Insert("hello", 1)
 	tr.Insert("hella", 2)
 	tr.Insert("hellu", 3)
@@ -323,7 +412,8 @@ func TestInsert3Times(t *testing.T) {
 }
 
 func TestInsert2TimesWithPrefix(t *testing.T) {
-	var tr Tree[string, int]
+	tr := New[string, int]()
+
 	tr.Insert("hello", 1)
 	tr.Insert("olleh", 2)
 
@@ -345,7 +435,8 @@ func TestInsert2TimesWithPrefix(t *testing.T) {
 }
 
 func TestInsert5TimesWithPrefix(t *testing.T) {
-	var tr Tree[string, int]
+	tr := New[string, int]()
+
 	tr.Insert("hello", 1)
 	tr.Insert("helle", 2)
 	tr.Insert("hellu", 3)
@@ -384,8 +475,7 @@ func TestInsert5TimesWithPrefix(t *testing.T) {
 }
 
 func TestInsert17TimesWithPrefix(t *testing.T) {
-	var tr Tree[[]byte, int]
-
+	tr := New[[]byte, int]()
 	key := []byte{1, 2, 3}
 
 	for i := 1; i <= 17; i++ {
@@ -430,8 +520,7 @@ func TestInsert17TimesWithPrefix(t *testing.T) {
 }
 
 func TestInsert49TimesWithPrefix(t *testing.T) {
-	var tr Tree[[]byte, int]
-
+	tr := New[[]byte, int]()
 	key := []byte{1, 2, 3}
 
 	for i := range 49 {
@@ -476,7 +565,7 @@ func TestInsert49TimesWithPrefix(t *testing.T) {
 }
 
 func TestRecursiveInsert(t *testing.T) {
-	var tr Tree[string, int]
+	tr := New[string, int]()
 
 	tr.Insert("abacate", 1)
 	tr.Insert("abacinate", 2)
@@ -522,8 +611,149 @@ func TestRecursiveInsert(t *testing.T) {
 	}
 }
 
+func TestMinimum(t *testing.T) {
+	var words []string
+	tr := New[string, int]()
+
+	file, err := os.Open("testdata/words.txt")
+	if err != nil {
+		t.Fatalf("failed to open file: %s", err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+
+	for scanner.Scan() {
+		word := scanner.Text()
+		words = append(words, word)
+	}
+
+	for _, word := range words {
+		tr.Insert(word, len(word))
+	}
+
+	var res []string
+	for key, _ := range tr.All() {
+		res = append(res, key)
+	}
+
+	slices.Sort(words)
+
+	if key, _, ok := tr.Minimum(); ok == true {
+		if key != words[0] {
+			t.Fatalf("expected word %q, got %q", words[0], key)
+		}
+	} else {
+		t.Fatal("minimum not found")
+	}
+}
+
+func TestMaximum(t *testing.T) {
+	var words []string
+	tr := New[string, int]()
+
+	file, err := os.Open("testdata/words.txt")
+	if err != nil {
+		t.Fatalf("failed to open file: %s", err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+
+	for scanner.Scan() {
+		word := scanner.Text()
+		words = append(words, word)
+	}
+
+	for _, word := range words {
+		tr.Insert(word, len(word))
+	}
+
+	var res []string
+	for key, _ := range tr.All() {
+		res = append(res, key)
+	}
+
+	slices.Sort(words)
+
+	if key, _, ok := tr.Maximum(); ok == true {
+		if key != words[len(words)-1] {
+			t.Fatalf("expected word %q, got %q", words[len(words)-1], key)
+		}
+	} else {
+		t.Fatal("maximum not found")
+	}
+}
+
+func TestIterAll(t *testing.T) {
+	var words []string
+	tr := New[string, int]()
+
+	file, err := os.Open("testdata/words.txt")
+	if err != nil {
+		t.Fatalf("failed to open file: %s", err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+
+	for scanner.Scan() {
+		word := scanner.Text()
+		words = append(words, word)
+	}
+
+	for _, word := range words {
+		tr.Insert(word, len(word))
+	}
+
+	var res []string
+	for key, _ := range tr.All() {
+		res = append(res, key)
+	}
+
+	slices.Sort(words)
+
+	if !slices.Equal(words, res) {
+		t.Fatal("slices are not the same")
+	}
+}
+
+func TestIterBackward(t *testing.T) {
+	var words []string
+	tr := New[string, int]()
+
+	file, err := os.Open("testdata/words.txt")
+	if err != nil {
+		t.Fatalf("failed to open file: %s", err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+
+	for scanner.Scan() {
+		word := scanner.Text()
+		words = append(words, word)
+	}
+
+	for _, word := range words {
+		tr.Insert(word, len(word))
+	}
+
+	var res []string
+	for key, _ := range tr.Backward() {
+		res = append(res, key)
+	}
+
+	slices.Sort(words)
+	slices.Reverse(words)
+
+	if !slices.Equal(words, res) {
+		t.Fatal("slices are not the same")
+	}
+}
+
 func BenchmarkInsert(b *testing.B) {
-	var tr Tree[string, int]
+	tr := New[string, int]()
 
 	file, err := os.Open("testdata/words.txt")
 	if err != nil {
@@ -547,7 +777,8 @@ func BenchmarkInsert(b *testing.B) {
 }
 
 func BenchmarkSearch16(b *testing.B) {
-	var tr Tree[string, int]
+	tr := New[string, int]()
+
 	tr.Insert("hello", 1)
 	tr.Insert("helle", 2)
 	tr.Insert("hellu", 3)

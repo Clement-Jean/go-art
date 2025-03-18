@@ -1,6 +1,8 @@
 package art
 
 import (
+	"bytes"
+	"iter"
 	"strings"
 	"unsafe"
 )
@@ -28,7 +30,7 @@ func WithEndByte[K nodeKey, V any](b byte) func(*Tree[K, V]) {
 	}
 }
 
-func longestCommonPrefix(key, other string, depth int) int {
+func longestCommonPrefix(key, other []byte, depth int) int {
 	maxCmp := min(len(key), len(other)) - depth
 
 	var idx int
@@ -42,6 +44,59 @@ func longestCommonPrefix(key, other string, depth int) int {
 }
 
 func minimum[K nodeKey, V any](ref nodeRef) *nodeLeaf[K, V] {
+	for ref.pointer != nil {
+		kind := ref.tag
+		if kind == nodeKindLeaf {
+			return (*nodeLeaf[K, V])(ref.pointer)
+		}
+
+		switch kind {
+		case nodeKind4:
+			n4 := (*node4)(ref.pointer)
+			ref = n4.children[0]
+		case nodeKind16:
+			n16 := (*node16)(ref.pointer)
+			ref = n16.children[0]
+		case nodeKind48:
+			idx := 0
+			n48 := (*node48)(ref.pointer)
+
+			for n48.keys[idx] == 0 {
+				idx++
+			}
+			idx = int(n48.keys[idx]) - 1
+			ref = n48.children[idx]
+		case nodeKind256:
+			idx := 0
+			n256 := (*node256)(ref.pointer)
+
+			for n256.children[idx].pointer == nil {
+				idx++
+			}
+			ref = n256.children[idx]
+		default:
+			panic("shouldn't be possible!")
+		}
+	}
+
+	return nil
+}
+
+func (t *Tree[K, V]) Minimum() (K, V, bool) {
+	if leaf := minimum[K, V](t.root); leaf != nil {
+		keyStr := unsafe.String(leaf.key, leaf.len)
+		keyStr = strings.Trim(keyStr, string(t.end))
+		return K(keyStr), leaf.value, true
+	}
+
+	var (
+		notFoundKey   K
+		notFoundValue V
+	)
+	return notFoundKey, notFoundValue, false
+}
+
+func maximum[K nodeKey, V any](ref nodeRef) *nodeLeaf[K, V] {
 	if ref.pointer == nil {
 		return nil
 	}
@@ -54,34 +109,48 @@ func minimum[K nodeKey, V any](ref nodeRef) *nodeLeaf[K, V] {
 	switch kind {
 	case nodeKind4:
 		n4 := (*node4)(ref.pointer)
-		return minimum[K, V](n4.children[0])
+		return maximum[K, V](n4.children[n4.childrenLen-1])
 	case nodeKind16:
 		n16 := (*node16)(ref.pointer)
-		return minimum[K, V](n16.children[0])
+		return maximum[K, V](n16.children[n16.childrenLen-1])
 	case nodeKind48:
-		idx := 0
+		idx := 255
 		n48 := (*node48)(ref.pointer)
 
 		for n48.keys[idx] == 0 {
-			idx++
+			idx--
 		}
 		idx = int(n48.keys[idx]) - 1
 
-		return minimum[K, V](n48.children[idx])
+		return maximum[K, V](n48.children[idx])
 	case nodeKind256:
-		idx := 0
+		idx := 255
 		n256 := (*node256)(ref.pointer)
 
 		for n256.children[idx].pointer == nil {
-			idx++
+			idx--
 		}
-		return minimum[K, V](n256.children[idx])
+		return maximum[K, V](n256.children[idx])
 	default:
 		panic("shouldn't be possible!")
 	}
 }
 
-func prefixMismatch[K nodeKey, V any](n nodeRef, key string, keyLen, depth int) int {
+func (t *Tree[K, V]) Maximum() (K, V, bool) {
+	if leaf := maximum[K, V](t.root); leaf != nil {
+		keyStr := unsafe.String(leaf.key, leaf.len)
+		keyStr = strings.Trim(keyStr, string(t.end))
+		return K(keyStr), leaf.value, true
+	}
+
+	var (
+		notFoundKey   K
+		notFoundValue V
+	)
+	return notFoundKey, notFoundValue, false
+}
+
+func prefixMismatch[K nodeKey, V any](n nodeRef, key []byte, keyLen, depth int) int {
 	node := n.node()
 	maxCmp := min(int(min(maxPrefixLen, node.prefixLen)), keyLen-depth)
 
@@ -94,7 +163,7 @@ func prefixMismatch[K nodeKey, V any](n nodeRef, key string, keyLen, depth int) 
 
 	if node.prefixLen > maxPrefixLen {
 		leaf := minimum[K, V](n)
-		leafKeyStr := unsafe.String(leaf.key, leaf.len)
+		leafKeyStr := unsafe.Slice(leaf.key, leaf.len)
 
 		maxCmp = min(int(leaf.len), keyLen) - depth
 		for ; idx < maxCmp; idx++ {
@@ -107,10 +176,11 @@ func prefixMismatch[K nodeKey, V any](n nodeRef, key string, keyLen, depth int) 
 	return idx
 }
 
+// Insert inserts a key-value pair in the tree.
 func (t *Tree[K, V]) Insert(key K, val V) {
-	keyStr := string(key) + string(t.end)
+	keyStr := []byte(string(key) + string(t.end))
 	leaf := &nodeLeaf[K, V]{
-		key:   unsafe.StringData(keyStr),
+		key:   unsafe.SliceData(keyStr),
 		value: val,
 		len:   uint32(len(keyStr)),
 	}
@@ -128,9 +198,9 @@ func (t *Tree[K, V]) Insert(key K, val V) {
 	for {
 		if ref.tag == nodeKindLeaf {
 			nl := (*nodeLeaf[K, V])(ref.pointer)
-			leafKeyStr := unsafe.String(nl.key, nl.len)
+			leafKeyStr := unsafe.Slice(nl.key, nl.len)
 
-			if strings.Compare(keyStr, leafKeyStr) == 0 {
+			if bytes.Compare(keyStr, leafKeyStr) == 0 {
 				return
 			}
 
@@ -173,7 +243,7 @@ func (t *Tree[K, V]) Insert(key K, val V) {
 			} else {
 				node.prefixLen -= uint32(prefixDiff + 1)
 				leafMin := minimum[K, V](n)
-				leafKeyStr := unsafe.String(leafMin.key, leafMin.len)
+				leafKeyStr := unsafe.Slice(leafMin.key, leafMin.len)
 				newNode.addChild(ref, leafKeyStr[depth+prefixDiff], n)
 				loLimit := depth + prefixDiff + 1
 				copy(node.prefix[:], leafKeyStr[loLimit:])
@@ -197,7 +267,7 @@ func (t *Tree[K, V]) Insert(key K, val V) {
 	}
 }
 
-func (n *node) checkPrefix(key string, depth int) int {
+func (n *node) checkPrefix(key []byte, depth int) int {
 	maxCmp := min(int(min(n.prefixLen, maxPrefixLen)), len(key)-depth)
 
 	var idx int
@@ -209,19 +279,21 @@ func (n *node) checkPrefix(key string, depth int) int {
 	return idx
 }
 
-func (l *nodeLeaf[K, V]) leafMatches(key string) int {
+func (l *nodeLeaf[K, V]) leafMatches(key []byte) int {
 	if l.len != uint32(len(key)) {
 		return 1
 	}
 
-	leafKeyStr := unsafe.String(l.key, l.len)
-	return strings.Compare(leafKeyStr, key)
+	leafKeyStr := unsafe.Slice(l.key, l.len)
+	return bytes.Compare(leafKeyStr, key)
 }
 
+// Search searches for element with the given key.
+// It returns whether the key is present (bool) and its value if it is present.
 func (t *Tree[K, V]) Search(key K) (V, bool) {
 	var notFound V
 
-	keyStr := string(key) + string(t.end)
+	keyStr := []byte(string(key) + string(t.end))
 	n := t.root
 	depth := 0
 
@@ -255,4 +327,195 @@ func (t *Tree[K, V]) Search(key K) (V, bool) {
 	}
 
 	return notFound, false
+}
+
+// Delete deletes a element with the given key.
+func (t *Tree[K, V]) Delete(key K) {
+	keyStr := []byte(string(key) + string(t.end))
+
+	if t.root.pointer == nil {
+		return
+	}
+
+	n := t.root
+	ref := &t.root
+	depth := 0
+
+	for {
+		if n.tag == nodeKindLeaf {
+			leaf := (*nodeLeaf[K, V])(n.pointer)
+
+			if leaf.leafMatches(keyStr) == 0 {
+				ref.pointer = nil
+				return
+			}
+
+			return
+		}
+
+		node := n.node()
+		if node.prefixLen != 0 {
+			prefixLen := node.checkPrefix(keyStr, depth)
+			if prefixLen != int(min(maxPrefixLen, node.prefixLen)) {
+				return
+			}
+			depth = depth + int(node.prefixLen)
+		}
+
+		child := n.findChild(keyStr[depth])
+		if child == nil {
+			return
+		}
+
+		if child.tag == nodeKindLeaf {
+			leaf := (*nodeLeaf[K, V])(n.pointer)
+
+			if leaf.leafMatches(keyStr) == 0 {
+				ref.deleteChild(keyStr[depth])
+				return
+			}
+
+			return
+		} else {
+			n = *child
+			ref = child
+			depth++
+		}
+	}
+}
+
+// All returns an iterator over the tree in alphabetical order.
+func (t *Tree[K, V]) All() iter.Seq2[K, V] {
+	return func(yield func(K, V) bool) {
+		if t.root.pointer == nil {
+			return
+		}
+
+		var q []nodeRef
+
+		q = append(q, t.root)
+		for len(q) != 0 {
+			n := q[len(q)-1]
+			q = q[:len(q)-1]
+
+			if n.tag == nodeKindLeaf {
+				leaf := (*nodeLeaf[K, V])(n.pointer)
+				keyStr := unsafe.String(leaf.key, leaf.len)
+				keyStr = strings.Trim(keyStr, string(t.end))
+
+				if !yield(K(keyStr), leaf.value) {
+					return
+				}
+				continue
+			}
+
+			switch n.tag {
+			case nodeKind4:
+				n4 := (*node4)(n.pointer)
+
+				for i := int(n4.childrenLen) - 1; i >= 0; i-- {
+					q = append(q, n4.children[i])
+				}
+
+			case nodeKind16:
+				n16 := (*node16)(n.pointer)
+
+				for i := int(n16.childrenLen) - 1; i >= 0; i-- {
+					q = append(q, n16.children[i])
+				}
+
+			case nodeKind48:
+				n48 := (*node48)(n.pointer)
+
+				for i := 255; i >= 0; i-- {
+					idx := n48.keys[i]
+					if idx == 0 {
+						continue
+					}
+					q = append(q, n48.children[idx-1])
+				}
+
+			case nodeKind256:
+				n256 := (*node256)(n.pointer)
+
+				for i := 255; i >= 0; i-- {
+					if n256.children[i].pointer == nil {
+						continue
+					}
+					q = append(q, n256.children[i])
+				}
+
+			default:
+				panic("shouldn't be possible!")
+			}
+		}
+	}
+}
+
+// Backward returns an iterator over the tree in reverse alphabetical order.
+func (t *Tree[K, V]) Backward() iter.Seq2[K, V] {
+	return func(yield func(K, V) bool) {
+		if t.root.pointer == nil {
+			return
+		}
+
+		var q []nodeRef
+
+		q = append(q, t.root)
+		for len(q) != 0 {
+			n := q[len(q)-1]
+			q = q[:len(q)-1]
+
+			if n.tag == nodeKindLeaf {
+				leaf := (*nodeLeaf[K, V])(n.pointer)
+				keyStr := unsafe.String(leaf.key, leaf.len)
+				keyStr = strings.Trim(keyStr, string(t.end))
+
+				if !yield(K(keyStr), leaf.value) {
+					return
+				}
+				continue
+			}
+
+			switch n.tag {
+			case nodeKind4:
+				n4 := (*node4)(n.pointer)
+
+				for i := uint8(0); i < n4.childrenLen; i++ {
+					q = append(q, n4.children[i])
+				}
+
+			case nodeKind16:
+				n16 := (*node16)(n.pointer)
+
+				for i := uint8(0); i < n16.childrenLen; i++ {
+					q = append(q, n16.children[i])
+				}
+
+			case nodeKind48:
+				n48 := (*node48)(n.pointer)
+
+				for i := 0; i < 256; i++ {
+					idx := n48.keys[i]
+					if idx == 0 {
+						continue
+					}
+					q = append(q, n48.children[idx-1])
+				}
+
+			case nodeKind256:
+				n256 := (*node256)(n.pointer)
+
+				for i := 0; i < 256; i++ {
+					if n256.children[i].pointer == nil {
+						continue
+					}
+					q = append(q, n256.children[i])
+				}
+
+			default:
+				panic("shouldn't be possible!")
+			}
+		}
+	}
 }
