@@ -1,32 +1,38 @@
 package art
 
 import (
-	"bytes"
 	"iter"
 	"strings"
 	"unsafe"
+
+	"golang.org/x/text/collate"
 )
 
-type Tree[K nodeKey, V any] struct {
-	root nodeRef
-	end  byte
+type Tree[K nodeKey, V any] interface {
+	setEnd(byte)
+	setCollator(*collate.Collator)
+
+	Insert(K, V)
+	Search(K) (V, bool)
+	Delete(K)
+
+	Minimum() (K, V, bool)
+	Maximum() (K, V, bool)
+
+	All() iter.Seq2[K, V]
+	Backward() iter.Seq2[K, V]
 }
 
-func New[K nodeKey, V any](opts ...func(*Tree[K, V])) *Tree[K, V] {
-	t := &Tree[K, V]{
-		end: '\x00',
-	}
+func New[K nodeKey, V any](opts ...func(t Tree[K, V])) Tree[K, V] {
+	var k K
 
-	for _, opt := range opts {
-		opt(t)
-	}
-
-	return t
-}
-
-func WithEndByte[K nodeKey, V any](b byte) func(*Tree[K, V]) {
-	return func(t *Tree[K, V]) {
-		t.end = b
+	switch any(k).(type) {
+	case string, []rune:
+		return NewCollationSortedTree[K, V]()
+	case []byte:
+		return NewAlphaSortedTree[K, V]()
+	default:
+		panic("shouldn't be possible!")
 	}
 }
 
@@ -82,20 +88,6 @@ func minimum[K nodeKey, V any](ref nodeRef) *nodeLeaf[K, V] {
 	return nil
 }
 
-func (t *Tree[K, V]) Minimum() (K, V, bool) {
-	if leaf := minimum[K, V](t.root); leaf != nil {
-		keyStr := unsafe.String(leaf.key, leaf.len)
-		keyStr = strings.Trim(keyStr, string(t.end))
-		return K(keyStr), leaf.value, true
-	}
-
-	var (
-		notFoundKey   K
-		notFoundValue V
-	)
-	return notFoundKey, notFoundValue, false
-}
-
 func maximum[K nodeKey, V any](ref nodeRef) *nodeLeaf[K, V] {
 	if ref.pointer == nil {
 		return nil
@@ -136,137 +128,6 @@ func maximum[K nodeKey, V any](ref nodeRef) *nodeLeaf[K, V] {
 	}
 }
 
-func (t *Tree[K, V]) Maximum() (K, V, bool) {
-	if leaf := maximum[K, V](t.root); leaf != nil {
-		keyStr := unsafe.String(leaf.key, leaf.len)
-		keyStr = strings.Trim(keyStr, string(t.end))
-		return K(keyStr), leaf.value, true
-	}
-
-	var (
-		notFoundKey   K
-		notFoundValue V
-	)
-	return notFoundKey, notFoundValue, false
-}
-
-func prefixMismatch[K nodeKey, V any](n nodeRef, key []byte, keyLen, depth int) int {
-	node := n.node()
-	maxCmp := min(int(min(maxPrefixLen, node.prefixLen)), keyLen-depth)
-
-	var idx int
-	for idx = 0; idx < maxCmp; idx++ {
-		if node.prefix[idx] != key[depth+idx] {
-			return idx
-		}
-	}
-
-	if node.prefixLen > maxPrefixLen {
-		leaf := minimum[K, V](n)
-		leafKeyStr := unsafe.Slice(leaf.key, leaf.len)
-
-		maxCmp = min(int(leaf.len), keyLen) - depth
-		for ; idx < maxCmp; idx++ {
-			if leafKeyStr[idx+depth] != key[depth+idx] {
-				return idx
-			}
-		}
-	}
-
-	return idx
-}
-
-// Insert inserts a key-value pair in the tree.
-func (t *Tree[K, V]) Insert(key K, val V) {
-	keyStr := []byte(string(key) + string(t.end))
-	leaf := &nodeLeaf[K, V]{
-		key:   unsafe.SliceData(keyStr),
-		value: val,
-		len:   uint32(len(keyStr)),
-	}
-	leafRef := nodeRef{pointer: unsafe.Pointer(leaf), tag: nodeKindLeaf}
-	n := t.root
-
-	if t.root.pointer == nil {
-		t.root = leafRef
-		return
-	}
-
-	ref := &t.root
-	depth := 0
-
-	for {
-		if ref.tag == nodeKindLeaf {
-			nl := (*nodeLeaf[K, V])(ref.pointer)
-			leafKeyStr := unsafe.Slice(nl.key, nl.len)
-
-			if bytes.Compare(keyStr, leafKeyStr) == 0 {
-				return
-			}
-
-			newNode := new(node4)
-
-			longestPrefix := longestCommonPrefix(leafKeyStr, keyStr, depth)
-			newNode.prefixLen = uint32(longestPrefix)
-
-			copy(newNode.prefix[:], keyStr[depth:])
-
-			*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
-
-			splitPrefix := int(depth + longestPrefix)
-			newNode.addChild(ref, leafKeyStr[splitPrefix], n)
-			newNode.addChild(ref, keyStr[splitPrefix], leafRef)
-			return
-		}
-
-		node := ref.node()
-		if node.prefixLen != 0 {
-			prefixDiff := prefixMismatch[K, V](n, keyStr, len(key), depth)
-
-			if prefixDiff >= int(node.prefixLen) {
-				depth += int(node.prefixLen)
-				goto CONTINUE_SEARCH
-			}
-
-			newNode := new(node4)
-
-			*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
-
-			newNode.prefixLen = uint32(prefixDiff)
-			copy(newNode.prefix[:], node.prefix[:])
-
-			if node.prefixLen <= maxPrefixLen {
-				newNode.addChild(ref, node.prefix[prefixDiff], n)
-				loLimit := prefixDiff + 1
-				node.prefixLen -= uint32(loLimit)
-				copy(node.prefix[:], node.prefix[loLimit:])
-			} else {
-				node.prefixLen -= uint32(prefixDiff + 1)
-				leafMin := minimum[K, V](n)
-				leafKeyStr := unsafe.Slice(leafMin.key, leafMin.len)
-				newNode.addChild(ref, leafKeyStr[depth+prefixDiff], n)
-				loLimit := depth + prefixDiff + 1
-				copy(node.prefix[:], leafKeyStr[loLimit:])
-			}
-
-			newNode.addChild(ref, keyStr[depth+prefixDiff], leafRef)
-			return
-		}
-
-	CONTINUE_SEARCH:
-		child := ref.findChild(keyStr[depth])
-		if child != nil {
-			n = *child
-			ref = child
-			depth++
-			continue
-		}
-
-		ref.addChild(keyStr[depth], leafRef)
-		return
-	}
-}
-
 func (n *node) checkPrefix(key []byte, depth int) int {
 	maxCmp := min(int(min(n.prefixLen, maxPrefixLen)), len(key)-depth)
 
@@ -279,121 +140,15 @@ func (n *node) checkPrefix(key []byte, depth int) int {
 	return idx
 }
 
-func (l *nodeLeaf[K, V]) leafMatches(key []byte) int {
-	if l.len != uint32(len(key)) {
-		return 1
-	}
-
-	leafKeyStr := unsafe.Slice(l.key, l.len)
-	return bytes.Compare(leafKeyStr, key)
-}
-
-// Search searches for element with the given key.
-// It returns whether the key is present (bool) and its value if it is present.
-func (t *Tree[K, V]) Search(key K) (V, bool) {
-	var notFound V
-
-	keyStr := []byte(string(key) + string(t.end))
-	n := t.root
-	depth := 0
-
-	for n.pointer != nil {
-		if n.tag == nodeKindLeaf {
-			leaf := (*nodeLeaf[K, V])(n.pointer)
-
-			if leaf.leafMatches(keyStr) == 0 {
-				return leaf.value, true
-			}
-			return notFound, false
-		}
-
-		node := n.node()
-		if node.prefixLen != 0 {
-			prefixLen := node.checkPrefix(keyStr, depth)
-
-			if prefixLen != int(min(maxPrefixLen, node.prefixLen)) {
-				return notFound, false
-			}
-
-			depth += int(node.prefixLen)
-		}
-
-		if child := n.findChild(keyStr[depth]); child != nil {
-			n = *child
-		} else {
-			n = nodeRef{}
-		}
-		depth++
-	}
-
-	return notFound, false
-}
-
-// Delete deletes a element with the given key.
-func (t *Tree[K, V]) Delete(key K) {
-	keyStr := []byte(string(key) + string(t.end))
-
-	if t.root.pointer == nil {
-		return
-	}
-
-	n := t.root
-	ref := &t.root
-	depth := 0
-
-	for {
-		if n.tag == nodeKindLeaf {
-			leaf := (*nodeLeaf[K, V])(n.pointer)
-
-			if leaf.leafMatches(keyStr) == 0 {
-				ref.pointer = nil
-				return
-			}
-
-			return
-		}
-
-		node := n.node()
-		if node.prefixLen != 0 {
-			prefixLen := node.checkPrefix(keyStr, depth)
-			if prefixLen != int(min(maxPrefixLen, node.prefixLen)) {
-				return
-			}
-			depth = depth + int(node.prefixLen)
-		}
-
-		child := n.findChild(keyStr[depth])
-		if child == nil {
-			return
-		}
-
-		if child.tag == nodeKindLeaf {
-			leaf := (*nodeLeaf[K, V])(n.pointer)
-
-			if leaf.leafMatches(keyStr) == 0 {
-				ref.deleteChild(keyStr[depth])
-				return
-			}
-
-			return
-		} else {
-			n = *child
-			ref = child
-			depth++
-		}
-	}
-}
-
-// All returns an iterator over the tree in alphabetical order.
-func (t *Tree[K, V]) All() iter.Seq2[K, V] {
+func all[K nodeKey, V any](root nodeRef, end byte) iter.Seq2[K, V] {
 	return func(yield func(K, V) bool) {
-		if t.root.pointer == nil {
+		if root.pointer == nil {
 			return
 		}
 
 		var q []nodeRef
 
-		q = append(q, t.root)
+		q = append(q, root)
 		for len(q) != 0 {
 			n := q[len(q)-1]
 			q = q[:len(q)-1]
@@ -401,7 +156,7 @@ func (t *Tree[K, V]) All() iter.Seq2[K, V] {
 			if n.tag == nodeKindLeaf {
 				leaf := (*nodeLeaf[K, V])(n.pointer)
 				keyStr := unsafe.String(leaf.key, leaf.len)
-				keyStr = strings.Trim(keyStr, string(t.end))
+				keyStr = strings.Trim(keyStr, string(end))
 
 				if !yield(K(keyStr), leaf.value) {
 					return
@@ -452,16 +207,15 @@ func (t *Tree[K, V]) All() iter.Seq2[K, V] {
 	}
 }
 
-// Backward returns an iterator over the tree in reverse alphabetical order.
-func (t *Tree[K, V]) Backward() iter.Seq2[K, V] {
+func backward[K nodeKey, V any](root nodeRef, end byte) iter.Seq2[K, V] {
 	return func(yield func(K, V) bool) {
-		if t.root.pointer == nil {
+		if root.pointer == nil {
 			return
 		}
 
 		var q []nodeRef
 
-		q = append(q, t.root)
+		q = append(q, root)
 		for len(q) != 0 {
 			n := q[len(q)-1]
 			q = q[:len(q)-1]
@@ -469,7 +223,7 @@ func (t *Tree[K, V]) Backward() iter.Seq2[K, V] {
 			if n.tag == nodeKindLeaf {
 				leaf := (*nodeLeaf[K, V])(n.pointer)
 				keyStr := unsafe.String(leaf.key, leaf.len)
-				keyStr = strings.Trim(keyStr, string(t.end))
+				keyStr = strings.Trim(keyStr, string(end))
 
 				if !yield(K(keyStr), leaf.value) {
 					return
