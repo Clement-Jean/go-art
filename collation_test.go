@@ -346,7 +346,7 @@ func TestCollateIterBackward(t *testing.T) {
 }
 
 func TestCollateInsertRune(t *testing.T) {
-	tr := art.New[[]rune, int]()
+	tr := art.NewCollationSortedTree[[]rune, int]()
 	key := []rune("你好")
 
 	tr.Insert(key, 1)

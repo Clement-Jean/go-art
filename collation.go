@@ -10,6 +10,26 @@ import (
 	"golang.org/x/text/language"
 )
 
+type collateLeafNode[K nodeKey, V any] struct {
+	colKey    *byte
+	key       *byte
+	value     V
+	colKeyLen uint32
+	len       uint32
+}
+
+func (n *collateLeafNode[K, V]) getKey() *byte {
+	return n.key
+}
+
+func (n *collateLeafNode[K, V]) getLen() uint32 {
+	return n.len
+}
+
+func (n *collateLeafNode[K, V]) getValue() V {
+	return n.value
+}
+
 type collationSortedTree[K nodeKey, V any] struct {
 	c    *collate.Collator
 	root nodeRef
@@ -44,7 +64,7 @@ func WithCollator[K nodeKey, V any](c *collate.Collator) func(Tree[K, V]) {
 	}
 }
 
-func prefixMismatchCollate[K nodeKey, V any](n nodeRef, key []byte, c *collate.Collator, buf *collate.Buffer, depth int) int {
+func prefixMismatchCollate[K nodeKey, V any](n nodeRef, key []byte, depth int) int {
 	node := n.node()
 	maxCmp := min(int(min(maxPrefixLen, node.prefixLen)), len(key)-depth)
 
@@ -56,13 +76,13 @@ func prefixMismatchCollate[K nodeKey, V any](n nodeRef, key []byte, c *collate.C
 	}
 
 	if node.prefixLen > maxPrefixLen {
-		leaf := minimum[K, V](n)
-		leafKeyStr := unsafe.Slice(leaf.key, leaf.len)
-		leafColKey := c.Key(buf, leafKeyStr)
+		leaf := minimum[K, V, *collateLeafNode[K, V]](n)
+		leafColKey := unsafe.Slice(leaf.colKey, leaf.colKeyLen)
 
 		maxCmp = min(int(len(leafColKey)), len(key)) - depth
 		for ; idx < maxCmp; idx++ {
-			if leafColKey[idx+depth] != key[depth+idx] {
+			realIdx := depth + idx
+			if leafColKey[realIdx] != key[realIdx] {
 				return idx
 			}
 		}
@@ -72,7 +92,7 @@ func prefixMismatchCollate[K nodeKey, V any](n nodeRef, key []byte, c *collate.C
 }
 
 func (t *collationSortedTree[K, V]) Minimum() (K, V, bool) {
-	if leaf := minimum[K, V](t.root); leaf != nil {
+	if leaf := minimum[K, V, *collateLeafNode[K, V]](t.root); leaf != nil {
 		keyStr := unsafe.String(leaf.key, leaf.len)
 		keyStr = strings.Trim(keyStr, string(t.end))
 		return K(keyStr), leaf.value, true
@@ -86,7 +106,7 @@ func (t *collationSortedTree[K, V]) Minimum() (K, V, bool) {
 }
 
 func (t *collationSortedTree[K, V]) Maximum() (K, V, bool) {
-	if leaf := maximum[K, V](t.root); leaf != nil {
+	if leaf := maximum[K, V, *collateLeafNode[K, V]](t.root); leaf != nil {
 		keyStr := unsafe.String(leaf.key, leaf.len)
 		keyStr = strings.Trim(keyStr, string(t.end))
 		return K(keyStr), leaf.value, true
@@ -103,10 +123,12 @@ func (t *collationSortedTree[K, V]) Maximum() (K, V, bool) {
 func (t *collationSortedTree[K, V]) Insert(key K, val V) {
 	keyStr := append([]byte(string(key)), t.end)
 	colKey := t.c.Key(&t.buf, keyStr)
-	leaf := &nodeLeaf[K, V]{
-		key:   unsafe.SliceData(keyStr),
-		value: val,
-		len:   uint32(len(keyStr)),
+	leaf := &collateLeafNode[K, V]{
+		colKey:    unsafe.SliceData(colKey),
+		key:       unsafe.SliceData(keyStr),
+		value:     val,
+		colKeyLen: uint32(len(colKey)),
+		len:       uint32(len(keyStr)),
 	}
 	leafRef := nodeRef{pointer: unsafe.Pointer(leaf), tag: nodeKindLeaf}
 	n := t.root
@@ -121,14 +143,14 @@ func (t *collationSortedTree[K, V]) Insert(key K, val V) {
 
 	for {
 		if ref.tag == nodeKindLeaf {
-			nl := (*nodeLeaf[K, V])(ref.pointer)
+			nl := (*collateLeafNode[K, V])(ref.pointer)
 			leafKeyStr := unsafe.Slice(nl.key, nl.len)
 
 			if bytes.Compare(keyStr, leafKeyStr) == 0 {
 				return
 			}
 
-			leafColKey := t.c.Key(&t.buf, leafKeyStr)
+			leafColKey := unsafe.Slice(nl.colKey, nl.colKeyLen)
 			newNode := new(node4)
 
 			longestPrefix := longestCommonPrefix(leafColKey, colKey, depth)
@@ -146,7 +168,7 @@ func (t *collationSortedTree[K, V]) Insert(key K, val V) {
 
 		node := ref.node()
 		if node.prefixLen != 0 {
-			prefixDiff := prefixMismatchCollate[K, V](n, colKey, t.c, &t.buf, depth)
+			prefixDiff := prefixMismatchCollate[K, V](n, colKey, depth)
 
 			if prefixDiff >= int(node.prefixLen) {
 				depth += int(node.prefixLen)
@@ -167,9 +189,8 @@ func (t *collationSortedTree[K, V]) Insert(key K, val V) {
 				copy(node.prefix[:], node.prefix[loLimit:])
 			} else {
 				node.prefixLen -= uint32(prefixDiff + 1)
-				leafMin := minimum[K, V](n)
-				leafKeyStr := unsafe.Slice(leafMin.key, leafMin.len)
-				leafColKey := t.c.Key(&t.buf, leafKeyStr)
+				leafMin := minimum[K, V, *collateLeafNode[K, V]](n)
+				leafColKey := unsafe.Slice(leafMin.colKey, leafMin.colKeyLen)
 
 				newNode.addChild(ref, leafColKey[depth+prefixDiff], n)
 				loLimit := depth + prefixDiff + 1
@@ -206,7 +227,7 @@ func (t *collationSortedTree[K, V]) Search(key K) (V, bool) {
 
 	for n.pointer != nil {
 		if n.tag == nodeKindLeaf {
-			leaf := (*nodeLeaf[K, V])(n.pointer)
+			leaf := (*collateLeafNode[K, V])(n.pointer)
 			leafKeyStr := unsafe.Slice(leaf.key, leaf.len)
 			if bytes.Compare(leafKeyStr, keyStr) == 0 {
 				return leaf.value, true
@@ -250,7 +271,7 @@ func (t *collationSortedTree[K, V]) Delete(key K) {
 
 	for {
 		if n.tag == nodeKindLeaf {
-			leaf := (*nodeLeaf[K, V])(n.pointer)
+			leaf := (*collateLeafNode[K, V])(n.pointer)
 			leafKeyStr := unsafe.Slice(leaf.key, leaf.len)
 			if bytes.Compare(leafKeyStr, keyStr) == 0 {
 				ref.pointer = nil
@@ -270,12 +291,13 @@ func (t *collationSortedTree[K, V]) Delete(key K) {
 		}
 
 		child := n.findChild(colKey[depth])
+
 		if child == nil {
 			return
 		}
 
 		if child.tag == nodeKindLeaf {
-			leaf := (*nodeLeaf[K, V])(n.pointer)
+			leaf := (*collateLeafNode[K, V])(n.pointer)
 			leafKeyStr := unsafe.Slice(leaf.key, leaf.len)
 
 			if bytes.Compare(leafKeyStr, keyStr) == 0 {
@@ -294,10 +316,10 @@ func (t *collationSortedTree[K, V]) Delete(key K) {
 
 // All returns an iterator over the tree in collation order.
 func (t *collationSortedTree[K, V]) All() iter.Seq2[K, V] {
-	return all[K, V](t.root, t.end)
+	return all[K, V, *collateLeafNode[K, V]](t.root, t.end)
 }
 
 // Backward returns an iterator over the tree in reverse collation order.
 func (t *collationSortedTree[K, V]) Backward() iter.Seq2[K, V] {
-	return backward[K, V](t.root, t.end)
+	return backward[K, V, *collateLeafNode[K, V]](t.root, t.end)
 }

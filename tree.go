@@ -12,48 +12,44 @@ type Tree[K nodeKey, V any] interface {
 	setEnd(byte)
 	setCollator(*collate.Collator)
 
+	// Insert inserts a key-value pair in the tree.
 	Insert(K, V)
+
+	// Search searches for element with the given key.
+	// It returns whether the key is present (bool) and its value if it is present.
 	Search(K) (V, bool)
+
+	// Delete deletes a element with the given key.
 	Delete(K)
 
+	// Minimum find the minimum K/V pair based on the key.
 	Minimum() (K, V, bool)
+
+	// Maximum find the maximum K/V pair based on the key.
 	Maximum() (K, V, bool)
 
 	All() iter.Seq2[K, V]
 	Backward() iter.Seq2[K, V]
 }
 
-func New[K nodeKey, V any](opts ...func(t Tree[K, V])) Tree[K, V] {
-	var k K
-
-	switch any(k).(type) {
-	case string, []rune:
-		return NewCollationSortedTree[K, V]()
-	case []byte:
-		return NewAlphaSortedTree[K, V]()
-	default:
-		panic("shouldn't be possible!")
-	}
-}
-
 func longestCommonPrefix(key, other []byte, depth int) int {
-	maxCmp := min(len(key), len(other)) - depth
+	maxCmp := min(len(key), len(other))
 
-	var idx int
-	for idx = 0; idx < maxCmp; idx++ {
-		if key[depth+idx] != other[depth+idx] {
-			return idx
+	idx := depth
+	for ; idx < maxCmp; idx++ {
+		if key[idx] != other[idx] {
+			break
 		}
 	}
 
-	return idx
+	return idx - depth
 }
 
-func minimum[K nodeKey, V any](ref nodeRef) *nodeLeaf[K, V] {
+func minimum[K nodeKey, V any, L nodeLeaf[K, V]](ref nodeRef) L {
 	for ref.pointer != nil {
 		kind := ref.tag
 		if kind == nodeKindLeaf {
-			return (*nodeLeaf[K, V])(ref.pointer)
+			return (L)(ref.pointer)
 		}
 
 		switch kind {
@@ -88,44 +84,43 @@ func minimum[K nodeKey, V any](ref nodeRef) *nodeLeaf[K, V] {
 	return nil
 }
 
-func maximum[K nodeKey, V any](ref nodeRef) *nodeLeaf[K, V] {
-	if ref.pointer == nil {
-		return nil
-	}
-
-	kind := ref.tag
-	if kind == nodeKindLeaf {
-		return (*nodeLeaf[K, V])(ref.pointer)
-	}
-
-	switch kind {
-	case nodeKind4:
-		n4 := (*node4)(ref.pointer)
-		return maximum[K, V](n4.children[n4.childrenLen-1])
-	case nodeKind16:
-		n16 := (*node16)(ref.pointer)
-		return maximum[K, V](n16.children[n16.childrenLen-1])
-	case nodeKind48:
-		idx := 255
-		n48 := (*node48)(ref.pointer)
-
-		for n48.keys[idx] == 0 {
-			idx--
+func maximum[K nodeKey, V any, L nodeLeaf[K, V]](ref nodeRef) L {
+	for ref.pointer != nil {
+		kind := ref.tag
+		if kind == nodeKindLeaf {
+			return (L)(ref.pointer)
 		}
-		idx = int(n48.keys[idx]) - 1
 
-		return maximum[K, V](n48.children[idx])
-	case nodeKind256:
-		idx := 255
-		n256 := (*node256)(ref.pointer)
+		switch kind {
+		case nodeKind4:
+			n4 := (*node4)(ref.pointer)
+			ref = n4.children[n4.childrenLen-1]
+		case nodeKind16:
+			n16 := (*node16)(ref.pointer)
+			ref = n16.children[n16.childrenLen-1]
+		case nodeKind48:
+			idx := 255
+			n48 := (*node48)(ref.pointer)
 
-		for n256.children[idx].pointer == nil {
-			idx--
+			for n48.keys[idx] == 0 {
+				idx--
+			}
+			idx = int(n48.keys[idx]) - 1
+			ref = n48.children[idx]
+		case nodeKind256:
+			idx := 255
+			n256 := (*node256)(ref.pointer)
+
+			for n256.children[idx].pointer == nil {
+				idx--
+			}
+			ref = n256.children[idx]
+		default:
+			panic("shouldn't be possible!")
 		}
-		return maximum[K, V](n256.children[idx])
-	default:
-		panic("shouldn't be possible!")
 	}
+
+	return nil
 }
 
 func (n *node) checkPrefix(key []byte, depth int) int {
@@ -140,7 +135,7 @@ func (n *node) checkPrefix(key []byte, depth int) int {
 	return idx
 }
 
-func all[K nodeKey, V any](root nodeRef, end byte) iter.Seq2[K, V] {
+func all[K nodeKey, V any, L nodeLeaf[K, V]](root nodeRef, end byte) iter.Seq2[K, V] {
 	return func(yield func(K, V) bool) {
 		if root.pointer == nil {
 			return
@@ -154,11 +149,11 @@ func all[K nodeKey, V any](root nodeRef, end byte) iter.Seq2[K, V] {
 			q = q[:len(q)-1]
 
 			if n.tag == nodeKindLeaf {
-				leaf := (*nodeLeaf[K, V])(n.pointer)
-				keyStr := unsafe.String(leaf.key, leaf.len)
+				leaf := (L)(n.pointer)
+				keyStr := unsafe.String(leaf.getKey(), leaf.getLen())
 				keyStr = strings.Trim(keyStr, string(end))
 
-				if !yield(K(keyStr), leaf.value) {
+				if !yield(K(keyStr), leaf.getValue()) {
 					return
 				}
 				continue
@@ -207,7 +202,7 @@ func all[K nodeKey, V any](root nodeRef, end byte) iter.Seq2[K, V] {
 	}
 }
 
-func backward[K nodeKey, V any](root nodeRef, end byte) iter.Seq2[K, V] {
+func backward[K nodeKey, V any, L nodeLeaf[K, V]](root nodeRef, end byte) iter.Seq2[K, V] {
 	return func(yield func(K, V) bool) {
 		if root.pointer == nil {
 			return
@@ -221,11 +216,11 @@ func backward[K nodeKey, V any](root nodeRef, end byte) iter.Seq2[K, V] {
 			q = q[:len(q)-1]
 
 			if n.tag == nodeKindLeaf {
-				leaf := (*nodeLeaf[K, V])(n.pointer)
-				keyStr := unsafe.String(leaf.key, leaf.len)
+				leaf := (L)(n.pointer)
+				keyStr := unsafe.String(leaf.getKey(), leaf.getLen())
 				keyStr = strings.Trim(keyStr, string(end))
 
-				if !yield(K(keyStr), leaf.value) {
+				if !yield(K(keyStr), leaf.getValue()) {
 					return
 				}
 				continue

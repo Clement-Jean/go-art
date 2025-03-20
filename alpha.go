@@ -9,6 +9,24 @@ import (
 	"golang.org/x/text/collate"
 )
 
+type alphaLeafNode[K nodeKey, V any] struct {
+	key   *byte
+	value V
+	len   uint32
+}
+
+func (n *alphaLeafNode[K, V]) getKey() *byte {
+	return n.key
+}
+
+func (n *alphaLeafNode[K, V]) getLen() uint32 {
+	return n.len
+}
+
+func (n *alphaLeafNode[K, V]) getValue() V {
+	return n.value
+}
+
 type alphaSortedTree[K nodeKey, V any] struct {
 	root nodeRef
 	end  byte
@@ -50,12 +68,13 @@ func prefixMismatchAlpha[K nodeKey, V any](n nodeRef, key []byte, depth int) int
 	}
 
 	if node.prefixLen > maxPrefixLen {
-		leaf := minimum[K, V](n)
+		leaf := minimum[K, V, *alphaLeafNode[K, V]](n)
 		leafKeyStr := unsafe.Slice(leaf.key, leaf.len)
 
 		maxCmp = min(int(len(leafKeyStr)), len(key)) - depth
 		for ; idx < maxCmp; idx++ {
-			if leafKeyStr[idx+depth] != key[depth+idx] {
+			realIdx := depth + idx
+			if leafKeyStr[realIdx] != key[realIdx] {
 				return idx
 			}
 		}
@@ -65,7 +84,7 @@ func prefixMismatchAlpha[K nodeKey, V any](n nodeRef, key []byte, depth int) int
 }
 
 func (t *alphaSortedTree[K, V]) Minimum() (K, V, bool) {
-	if leaf := minimum[K, V](t.root); leaf != nil {
+	if leaf := minimum[K, V, *alphaLeafNode[K, V]](t.root); leaf != nil {
 		keyStr := unsafe.String(leaf.key, leaf.len)
 		keyStr = strings.Trim(keyStr, string(t.end))
 		return K(keyStr), leaf.value, true
@@ -79,7 +98,7 @@ func (t *alphaSortedTree[K, V]) Minimum() (K, V, bool) {
 }
 
 func (t *alphaSortedTree[K, V]) Maximum() (K, V, bool) {
-	if leaf := maximum[K, V](t.root); leaf != nil {
+	if leaf := maximum[K, V, *alphaLeafNode[K, V]](t.root); leaf != nil {
 		keyStr := unsafe.String(leaf.key, leaf.len)
 		keyStr = strings.Trim(keyStr, string(t.end))
 		return K(keyStr), leaf.value, true
@@ -92,10 +111,9 @@ func (t *alphaSortedTree[K, V]) Maximum() (K, V, bool) {
 	return notFoundKey, notFoundValue, false
 }
 
-// Insert inserts a key-value pair in the tree.
 func (t *alphaSortedTree[K, V]) Insert(key K, val V) {
 	keyStr := append([]byte(string(key)), t.end)
-	leaf := &nodeLeaf[K, V]{
+	leaf := &alphaLeafNode[K, V]{
 		key:   unsafe.SliceData(keyStr),
 		value: val,
 		len:   uint32(len(keyStr)),
@@ -113,7 +131,7 @@ func (t *alphaSortedTree[K, V]) Insert(key K, val V) {
 
 	for {
 		if ref.tag == nodeKindLeaf {
-			nl := (*nodeLeaf[K, V])(ref.pointer)
+			nl := (*alphaLeafNode[K, V])(ref.pointer)
 			leafKeyStr := unsafe.Slice(nl.key, nl.len)
 
 			if bytes.Compare(keyStr, leafKeyStr) == 0 {
@@ -129,7 +147,7 @@ func (t *alphaSortedTree[K, V]) Insert(key K, val V) {
 
 			*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
 
-			splitPrefix := int(depth + longestPrefix)
+			splitPrefix := depth + longestPrefix
 			newNode.addChild(ref, leafKeyStr[splitPrefix], n)
 			newNode.addChild(ref, keyStr[splitPrefix], leafRef)
 			return
@@ -158,7 +176,7 @@ func (t *alphaSortedTree[K, V]) Insert(key K, val V) {
 				copy(node.prefix[:], node.prefix[loLimit:])
 			} else {
 				node.prefixLen -= uint32(prefixDiff + 1)
-				leafMin := minimum[K, V](n)
+				leafMin := minimum[K, V, *alphaLeafNode[K, V]](n)
 				leafKeyStr := unsafe.Slice(leafMin.key, leafMin.len)
 
 				newNode.addChild(ref, leafKeyStr[depth+prefixDiff], n)
@@ -184,8 +202,6 @@ func (t *alphaSortedTree[K, V]) Insert(key K, val V) {
 	}
 }
 
-// Search searches for element with the given key.
-// It returns whether the key is present (bool) and its value if it is present.
 func (t *alphaSortedTree[K, V]) Search(key K) (V, bool) {
 	var notFound V
 
@@ -195,7 +211,7 @@ func (t *alphaSortedTree[K, V]) Search(key K) (V, bool) {
 
 	for n.pointer != nil {
 		if n.tag == nodeKindLeaf {
-			leaf := (*nodeLeaf[K, V])(n.pointer)
+			leaf := (*alphaLeafNode[K, V])(n.pointer)
 			leafKeyStr := unsafe.Slice(leaf.key, leaf.len)
 			if bytes.Compare(leafKeyStr, keyStr) == 0 {
 				return leaf.value, true
@@ -225,7 +241,6 @@ func (t *alphaSortedTree[K, V]) Search(key K) (V, bool) {
 	return notFound, false
 }
 
-// Delete deletes a element with the given key.
 func (t *alphaSortedTree[K, V]) Delete(key K) {
 	if t.root.pointer == nil {
 		return
@@ -238,7 +253,7 @@ func (t *alphaSortedTree[K, V]) Delete(key K) {
 
 	for {
 		if n.tag == nodeKindLeaf {
-			leaf := (*nodeLeaf[K, V])(n.pointer)
+			leaf := (*alphaLeafNode[K, V])(n.pointer)
 			leafKeyStr := unsafe.Slice(leaf.key, leaf.len)
 			if bytes.Compare(leafKeyStr, keyStr) == 0 {
 				ref.pointer = nil
@@ -258,12 +273,13 @@ func (t *alphaSortedTree[K, V]) Delete(key K) {
 		}
 
 		child := n.findChild(keyStr[depth])
+
 		if child == nil {
 			return
 		}
 
 		if child.tag == nodeKindLeaf {
-			leaf := (*nodeLeaf[K, V])(n.pointer)
+			leaf := (*alphaLeafNode[K, V])(n.pointer)
 			leafKeyStr := unsafe.Slice(leaf.key, leaf.len)
 
 			if bytes.Compare(leafKeyStr, keyStr) == 0 {
@@ -282,11 +298,10 @@ func (t *alphaSortedTree[K, V]) Delete(key K) {
 
 // All returns an iterator over the tree in alphabetical order.
 func (t *alphaSortedTree[K, V]) All() iter.Seq2[K, V] {
-	return all[K, V](t.root, t.end)
+	return all[K, V, *alphaLeafNode[K, V]](t.root, t.end)
 }
 
 // Backward returns an iterator over the tree in reverse alphabetical order.
-// Backward returns an iterator over the tree in reverse collation order.
 func (t *alphaSortedTree[K, V]) Backward() iter.Seq2[K, V] {
-	return backward[K, V](t.root, t.end)
+	return backward[K, V, *alphaLeafNode[K, V]](t.root, t.end)
 }

@@ -38,6 +38,14 @@ type nodeKey interface {
 	string | []byte | []rune
 }
 
+type nodeLeaf[K nodeKey, V any] interface {
+	getKey() *byte
+	getLen() uint32
+	getValue() V
+
+	*alphaLeafNode[K, V] | *collateLeafNode[K, V]
+}
+
 type nodeRef struct {
 	pointer unsafe.Pointer
 	tag     nodeKind
@@ -354,12 +362,6 @@ func (n48 *node48) deleteChild(ref *nodeRef, b byte) {
 type node256 struct {
 	children [maxNode256]nodeRef
 	node
-}
-
-type nodeLeaf[K nodeKey, V any] struct {
-	key   *byte
-	value V
-	len   uint32
 }
 
 func (n256 *node256) addChild(b byte, child nodeRef) {
