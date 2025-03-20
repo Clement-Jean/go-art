@@ -40,7 +40,9 @@ type nodeKey interface {
 
 type nodeLeaf[K nodeKey, V any] interface {
 	getKey() *byte
+	getTransformKey() *byte
 	getLen() uint32
+	getTransformLen() uint32
 	getValue() V
 
 	*alphaLeafNode[K, V] | *collateLeafNode[K, V]
