@@ -3,16 +3,10 @@ package art
 import (
 	"bytes"
 	"iter"
-	"strings"
 	"unsafe"
-
-	"golang.org/x/text/collate"
 )
 
 type Tree[K nodeKey, V any] interface {
-	setEnd(byte)
-	setCollator(*collate.Collator)
-
 	// Insert inserts a key-value pair in the tree.
 	Insert(K, V)
 
@@ -337,7 +331,7 @@ func (n *node) checkPrefix(key []byte, depth int) int {
 	return idx
 }
 
-func all[K nodeKey, V any, L nodeLeaf[K, V]](root nodeRef, end byte) iter.Seq2[K, V] {
+func all[K nodeKey, V any, L nodeLeaf[K, V]](root nodeRef, restore func(L) K) iter.Seq2[K, V] {
 	return func(yield func(K, V) bool) {
 		if root.pointer == nil {
 			return
@@ -352,10 +346,8 @@ func all[K nodeKey, V any, L nodeLeaf[K, V]](root nodeRef, end byte) iter.Seq2[K
 
 			if n.tag == nodeKindLeaf {
 				leaf := (L)(n.pointer)
-				keyStr := unsafe.String(leaf.getKey(), leaf.getLen())
-				keyStr = strings.Trim(keyStr, string(end))
 
-				if !yield(K(keyStr), leaf.getValue()) {
+				if !yield(restore(leaf), leaf.getValue()) {
 					return
 				}
 				continue
@@ -404,7 +396,7 @@ func all[K nodeKey, V any, L nodeLeaf[K, V]](root nodeRef, end byte) iter.Seq2[K
 	}
 }
 
-func backward[K nodeKey, V any, L nodeLeaf[K, V]](root nodeRef, end byte) iter.Seq2[K, V] {
+func backward[K nodeKey, V any, L nodeLeaf[K, V]](root nodeRef, restore func(L) K) iter.Seq2[K, V] {
 	return func(yield func(K, V) bool) {
 		if root.pointer == nil {
 			return
@@ -419,10 +411,8 @@ func backward[K nodeKey, V any, L nodeLeaf[K, V]](root nodeRef, end byte) iter.S
 
 			if n.tag == nodeKindLeaf {
 				leaf := (L)(n.pointer)
-				keyStr := unsafe.String(leaf.getKey(), leaf.getLen())
-				keyStr = strings.Trim(keyStr, string(end))
 
-				if !yield(K(keyStr), leaf.getValue()) {
+				if !yield(restore(leaf), leaf.getValue()) {
 					return
 				}
 				continue

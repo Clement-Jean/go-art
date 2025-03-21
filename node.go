@@ -34,8 +34,24 @@ type node struct {
 	prefix      [maxPrefixLen]byte
 }
 
-type nodeKey interface {
+type chars interface {
 	string | []byte | []rune
+}
+
+type ints interface {
+	int | int64 | int32 | int16 | int8
+}
+
+type uints interface {
+	uint | uint64 | uint32 | uint16 | uint8
+}
+
+type floats interface {
+	float64 | float32
+}
+
+type nodeKey interface {
+	chars | uints | ints | floats
 }
 
 type nodeLeaf[K nodeKey, V any] interface {

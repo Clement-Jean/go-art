@@ -339,7 +339,7 @@ func TestAlphaIterBackward(t *testing.T) {
 	}
 }
 
-func TestAlphaOrder(t *testing.T) {
+func TestAlphaAll(t *testing.T) {
 	tr := art.NewAlphaSortedTree[string, int]()
 	expected := []string{"1", "11", "9"}
 
@@ -350,6 +350,26 @@ func TestAlphaOrder(t *testing.T) {
 
 	var got []string
 	for k, _ := range tr.All() {
+		got = append(got, k)
+	}
+
+	if !slices.Equal(got, expected) {
+		t.Fatalf("expected %v, got %v", expected, got)
+	}
+}
+
+func TestAlphaBackward(t *testing.T) {
+	tr := art.NewAlphaSortedTree[string, int]()
+	expected := []string{"1", "11", "9"}
+
+	slices.Sort(expected)
+	slices.Reverse(expected)
+	tr.Insert("1", 1)
+	tr.Insert("11", 1)
+	tr.Insert("9", 1)
+
+	var got []string
+	for k, _ := range tr.Backward() {
 		got = append(got, k)
 	}
 

@@ -3,8 +3,6 @@ package art
 import (
 	"iter"
 	"unsafe"
-
-	"golang.org/x/text/collate"
 )
 
 type alphaLeafNode[K nodeKey, V any] struct {
@@ -19,19 +17,13 @@ func (n *alphaLeafNode[K, V]) getLen() uint32          { return n.len }
 func (n *alphaLeafNode[K, V]) getTransformLen() uint32 { return n.len }
 func (n *alphaLeafNode[K, V]) getValue() V             { return n.value }
 
-type alphaSortedTree[K nodeKey, V any] struct {
+type alphaSortedTree[K chars, V any] struct {
 	root nodeRef
 	end  byte
 	bck  AlphabeticalOrderKey[K]
 }
 
-func (t *alphaSortedTree[K, V]) setEnd(b byte) {
-	t.end = b
-}
-
-func (t *alphaSortedTree[K, V]) setCollator(c *collate.Collator) {}
-
-func NewAlphaSortedTree[K nodeKey, V any](opts ...func(Tree[K, V])) Tree[K, V] {
+func NewAlphaSortedTree[K chars, V any](opts ...func(*alphaSortedTree[K, V])) Tree[K, V] {
 	t := &alphaSortedTree[K, V]{
 		end: '\x00',
 		bck: AlphabeticalOrderKey[K]{},
@@ -44,16 +36,16 @@ func NewAlphaSortedTree[K nodeKey, V any](opts ...func(Tree[K, V])) Tree[K, V] {
 	return t
 }
 
-func WithEndByte[K nodeKey, V any](b byte) func(Tree[K, V]) {
-	return func(t Tree[K, V]) {
-		t.setEnd(b)
+func WithEndByte[K chars, V any](b byte) func(*alphaSortedTree[K, V]) {
+	return func(t *alphaSortedTree[K, V]) {
+		t.end = b
 	}
 }
 
 func (t *alphaSortedTree[K, V]) Minimum() (K, V, bool) {
 	if leaf := minimum[K, V, *alphaLeafNode[K, V]](t.root); leaf != nil {
 		keyStr := unsafe.Slice(leaf.key, leaf.len)
-		keyStr = keyStr[:len(keyStr)-1] //strings.Trim(keyStr, string(t.end))
+		keyStr = keyStr[:len(keyStr)-1]
 		return t.bck.Restore(keyStr), leaf.value, true
 	}
 
@@ -67,7 +59,7 @@ func (t *alphaSortedTree[K, V]) Minimum() (K, V, bool) {
 func (t *alphaSortedTree[K, V]) Maximum() (K, V, bool) {
 	if leaf := maximum[K, V, *alphaLeafNode[K, V]](t.root); leaf != nil {
 		keyStr := unsafe.Slice(leaf.key, leaf.len)
-		keyStr = keyStr[:len(keyStr)-1] //strings.Trim(keyStr, string(t.end))
+		keyStr = keyStr[:len(keyStr)-1]
 		return t.bck.Restore(keyStr), leaf.value, true
 	}
 
@@ -110,10 +102,18 @@ func (t *alphaSortedTree[K, V]) Delete(key K) {
 
 // All returns an iterator over the tree in alphabetical order.
 func (t *alphaSortedTree[K, V]) All() iter.Seq2[K, V] {
-	return all[K, V, *alphaLeafNode[K, V]](t.root, t.end)
+	return all(t.root, func(l *alphaLeafNode[K, V]) K {
+		keyStr := unsafe.Slice(l.key, l.len)
+		keyStr = keyStr[:len(keyStr)-1] // drop end byte
+		return t.bck.Restore(keyStr)
+	})
 }
 
 // Backward returns an iterator over the tree in reverse alphabetical order.
 func (t *alphaSortedTree[K, V]) Backward() iter.Seq2[K, V] {
-	return backward[K, V, *alphaLeafNode[K, V]](t.root, t.end)
+	return backward(t.root, func(l *alphaLeafNode[K, V]) K {
+		keyStr := unsafe.Slice(l.key, l.len)
+		keyStr = keyStr[:len(keyStr)-1] // drop end byte
+		return t.bck.Restore(keyStr)
+	})
 }

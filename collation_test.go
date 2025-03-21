@@ -355,7 +355,7 @@ func TestCollateInsertRune(t *testing.T) {
 	}
 }
 
-func TestCollateOrder(t *testing.T) {
+func TestCollateAll(t *testing.T) {
 	c := collate.New(language.English, collate.Numeric)
 	tr := art.NewCollationSortedTree(art.WithCollator[string, int](c))
 	expected := []string{"1", "11", "9"}
@@ -367,6 +367,27 @@ func TestCollateOrder(t *testing.T) {
 
 	var got []string
 	for k, _ := range tr.All() {
+		got = append(got, k)
+	}
+
+	if !slices.Equal(got, expected) {
+		t.Fatalf("expected %v, got %v", expected, got)
+	}
+}
+
+func TestCollateBackward(t *testing.T) {
+	c := collate.New(language.English, collate.Numeric)
+	tr := art.NewCollationSortedTree(art.WithCollator[string, int](c))
+	expected := []string{"1", "11", "9"}
+
+	c.SortStrings(expected)
+	slices.Reverse(expected)
+	tr.Insert("1", 1)
+	tr.Insert("11", 1)
+	tr.Insert("9", 1)
+
+	var got []string
+	for k, _ := range tr.Backward() {
 		got = append(got, k)
 	}
 
