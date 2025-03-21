@@ -219,11 +219,11 @@ func (fbk FloatBinaryKey[K]) Transform(k K) ([]byte, []byte) {
 		} else {
 			i = *(*uint64)(unsafe.Pointer(&f64))
 
-			if (i >> 63) == 1 {
-				i = ^(*(*uint64)(unsafe.Pointer(&i))) + 1
-				i ^= (1 << 63)
+			i = ^i + 1
+			if i < 0 {
+				i = ^i + 1
+				i |= (1 << 63)
 			}
-			i ^= (1 << 63)
 		}
 
 		b = make([]byte, 8)
@@ -251,11 +251,12 @@ func (fbk FloatBinaryKey[K]) Restore(b []byte) K {
 			return K(math.NaN())
 		}
 
-		i ^= (1 << 63)
-		if (i >> 63) == 1 {
-			i ^= (1 << 63)
-			i = ^(*(*uint64)(unsafe.Pointer(&i))) + 1
+		if i < 0 {
+			i |= (1 << 63)
+			i = ^i + 1
 		}
+		i = ^i + 1
+
 		return *(*K)(unsafe.Pointer(&i))
 	default:
 		panic("shouldn't be possible!")
