@@ -79,7 +79,7 @@ func insert[K nodeKey, V any, L nodeLeaf[K, V]](root *nodeRef, originalKey, tran
 	n := *ref
 	depth := 0
 
-	for {
+	for ref.pointer != nil {
 		if ref.tag == nodeKindLeaf {
 			nl := (L)(ref.pointer)
 			leafKeyStr := unsafe.Slice(nl.getKey(), nl.getLen())
