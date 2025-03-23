@@ -201,8 +201,27 @@ func (fbk FloatBinaryKey[K]) Transform(k K) ([]byte, []byte) {
 
 	switch any(k).(type) {
 	case float32:
-		i := *(*uint32)(unsafe.Pointer(&k))
-		*(*float32)(unsafe.Pointer(&i)) *= -1
+		var i uint32
+		f64 := float64(k)
+
+		if math.IsInf(f64, 1) {
+			i = math.MaxUint32 - 1
+		} else if math.IsInf(f64, -1) {
+			i = 1
+		} else if math.IsNaN(f64) {
+			i = 0
+		} else {
+			// http://stereopsis.com/radix.html
+
+			i = *(*uint32)(unsafe.Pointer(&k))
+
+			t := i >> 31
+			mask := -(*(*int32)(unsafe.Pointer(&t)))
+			mask2 := *(*uint32)(unsafe.Pointer(&mask)) | 0x80000000
+			i ^= mask2
+			i += 2
+		}
+
 		b = make([]byte, 4)
 		binary.BigEndian.PutUint32(b, i)
 
@@ -213,17 +232,19 @@ func (fbk FloatBinaryKey[K]) Transform(k K) ([]byte, []byte) {
 		if math.IsInf(f64, 1) {
 			i = math.MaxUint64 - 1
 		} else if math.IsInf(f64, -1) {
-			i = 0
+			i = 1
 		} else if math.IsNaN(f64) {
-			i = math.MaxUint64
+			i = 0
 		} else {
+			// http://stereopsis.com/radix.html
+
 			i = *(*uint64)(unsafe.Pointer(&f64))
 
-			i = ^i + 1
-			if i < 0 {
-				i = ^i + 1
-				i |= (1 << 63)
-			}
+			t := i >> 63
+			mask := -(*(*int64)(unsafe.Pointer(&t)))
+			mask2 := *(*uint64)(unsafe.Pointer(&mask)) | 0x8000000000000000
+			i ^= mask2
+			i += 2
 		}
 
 		b = make([]byte, 8)
@@ -237,7 +258,20 @@ func (fbk FloatBinaryKey[K]) Restore(b []byte) K {
 	switch any(k).(type) {
 	case float32:
 		i := binary.BigEndian.Uint32(b)
-		*(*float32)(unsafe.Pointer(&i)) *= -1
+		if i == math.MaxUint32-1 {
+			return K(math.Inf(1))
+		} else if i == 1 {
+			return K(math.Inf(-1))
+		} else if i == 0 {
+			return K(math.NaN())
+		} else if i == 2 {
+			return K(0)
+		}
+
+		i -= 2
+		mask := ((i >> 31) - 1) | 0x80000000
+		i ^= mask
+
 		return *(*K)(unsafe.Pointer(&i))
 
 	case float64:
@@ -245,17 +279,17 @@ func (fbk FloatBinaryKey[K]) Restore(b []byte) K {
 
 		if i == math.MaxUint64-1 {
 			return K(math.Inf(1))
-		} else if i == 0 {
+		} else if i == 1 {
 			return K(math.Inf(-1))
-		} else if i == math.MaxUint64 {
+		} else if i == 0 {
 			return K(math.NaN())
+		} else if i == 2 {
+			return K(0)
 		}
 
-		if i < 0 {
-			i |= (1 << 63)
-			i = ^i + 1
-		}
-		i = ^i + 1
+		i -= 2
+		mask := ((i >> 63) - 1) | 0x8000000000000000
+		i ^= mask
 
 		return *(*K)(unsafe.Pointer(&i))
 	default:

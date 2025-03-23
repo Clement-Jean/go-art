@@ -261,7 +261,7 @@ type node16 struct {
 
 func (n16 *node16) addChild(ref *nodeRef, b byte, child nodeRef) {
 	if n16.childrenLen < maxNode16 {
-		idx := searchNode16(&n16.keys, n16.childrenLen, b)
+		idx := insertPosNode16(&n16.keys, n16.childrenLen, b)
 
 		if idx != -1 {
 			loLimit := idx + 1
