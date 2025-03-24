@@ -49,7 +49,7 @@ type floats interface {
 }
 
 type nodeKey interface {
-	chars | uints | ints | floats
+	chars | uints | ints | floats | any
 }
 
 type nodeLeaf[K nodeKey, V any] interface {
@@ -59,7 +59,12 @@ type nodeLeaf[K nodeKey, V any] interface {
 	getTransformLen() uint32
 	getValue() V
 
-	*alphaLeafNode[K, V] | *collateLeafNode[K, V]
+	*alphaLeafNode[K, V] |
+		*collateLeafNode[K, V] |
+		*unsignedLeafNode[K, V] |
+		*signedLeafNode[K, V] |
+		*floatLeafNode[K, V] |
+		*compoundLeafNode[K, V]
 }
 
 type nodeRef struct {

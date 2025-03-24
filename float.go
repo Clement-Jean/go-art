@@ -19,25 +19,15 @@ func (n *floatLeafNode[K, V]) getValue() V             { return n.value }
 
 type floatSortedTree[K floats, V any] struct {
 	root nodeRef
-	end  byte
 	bck  FloatBinaryKey[K]
 }
 
-func NewFloatBinaryTree[K floats, V any](opts ...func(*floatSortedTree[K, V])) Tree[K, V] {
-	t := &floatSortedTree[K, V]{
-		end: '\x00',
-		bck: FloatBinaryKey[K]{},
-	}
-
-	for _, opt := range opts {
-		opt(t)
-	}
-
-	return t
+func NewFloatBinaryTree[K floats, V any]() Tree[K, V] {
+	return &floatSortedTree[K, V]{}
 }
 
 func (t *floatSortedTree[K, V]) All() iter.Seq2[K, V] {
-	return all(t.root, func(l *alphaLeafNode[K, V]) K {
+	return all(t.root, func(l *floatLeafNode[K, V]) K {
 		keyStr := unsafe.Slice(l.key, l.len)
 		keyStr = keyStr[:len(keyStr)-1] // drop end byte
 		return t.bck.Restore(keyStr)
@@ -45,7 +35,7 @@ func (t *floatSortedTree[K, V]) All() iter.Seq2[K, V] {
 }
 
 func (t *floatSortedTree[K, V]) Backward() iter.Seq2[K, V] {
-	return backward(t.root, func(l *alphaLeafNode[K, V]) K {
+	return backward(t.root, func(l *floatLeafNode[K, V]) K {
 		keyStr := unsafe.Slice(l.key, l.len)
 		keyStr = keyStr[:len(keyStr)-1] // drop end byte
 		return t.bck.Restore(keyStr)
@@ -58,15 +48,15 @@ func (t *floatSortedTree[K, V]) Delete(key K) {
 	}
 
 	_, keyStr := t.bck.Transform(key)
-	keyStr = append(keyStr, t.end)
+	keyStr = append(keyStr, '\x00')
 
-	delete[K, V, *alphaLeafNode[K, V]](&t.root, keyStr, keyStr)
+	delete[K, V, *floatLeafNode[K, V]](&t.root, keyStr, keyStr)
 }
 
 func (t *floatSortedTree[K, V]) Insert(key K, val V) {
 	_, keyStr := t.bck.Transform(key)
-	keyStr = append(keyStr, t.end)
-	leaf := &alphaLeafNode[K, V]{
+	keyStr = append(keyStr, '\x00')
+	leaf := &floatLeafNode[K, V]{
 		key:   unsafe.SliceData(keyStr),
 		value: val,
 		len:   uint32(len(keyStr)),
@@ -76,7 +66,7 @@ func (t *floatSortedTree[K, V]) Insert(key K, val V) {
 }
 
 func (t *floatSortedTree[K, V]) Maximum() (K, V, bool) {
-	if leaf := maximum[K, V, *alphaLeafNode[K, V]](t.root); leaf != nil {
+	if leaf := maximum[K, V, *floatLeafNode[K, V]](t.root); leaf != nil {
 		keyStr := unsafe.Slice(leaf.key, leaf.len)
 		keyStr = keyStr[:len(keyStr)-1]
 		return t.bck.Restore(keyStr), leaf.value, true
@@ -90,7 +80,7 @@ func (t *floatSortedTree[K, V]) Maximum() (K, V, bool) {
 }
 
 func (t *floatSortedTree[K, V]) Minimum() (K, V, bool) {
-	if leaf := minimum[K, V, *alphaLeafNode[K, V]](t.root); leaf != nil {
+	if leaf := minimum[K, V, *floatLeafNode[K, V]](t.root); leaf != nil {
 		keyStr := unsafe.Slice(leaf.key, leaf.len)
 		keyStr = keyStr[:len(keyStr)-1]
 		return t.bck.Restore(keyStr), leaf.value, true
@@ -105,7 +95,7 @@ func (t *floatSortedTree[K, V]) Minimum() (K, V, bool) {
 
 func (t *floatSortedTree[K, V]) Search(key K) (V, bool) {
 	_, keyStr := t.bck.Transform(key)
-	keyStr = append(keyStr, t.end)
+	keyStr = append(keyStr, '\x00')
 
-	return search[K, V, *alphaLeafNode[K, V]](t.root, keyStr, keyStr)
+	return search[K, V, *floatLeafNode[K, V]](t.root, keyStr, keyStr)
 }

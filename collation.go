@@ -27,12 +27,10 @@ type collationSortedTree[K chars, V any] struct {
 	buf  *collate.Buffer
 	c    *collate.Collator
 	root nodeRef
-	end  byte
 }
 
 func NewCollationSortedTree[K chars, V any](opts ...func(*collationSortedTree[K, V])) Tree[K, V] {
 	t := &collationSortedTree[K, V]{
-		end: '\x00',
 		c:   collate.New(language.Und),
 		buf: &collate.Buffer{},
 	}
@@ -53,7 +51,7 @@ func WithCollator[K chars, V any](c *collate.Collator) func(*collationSortedTree
 func (t *collationSortedTree[K, V]) Minimum() (K, V, bool) {
 	if leaf := minimum[K, V, *collateLeafNode[K, V]](t.root); leaf != nil {
 		keyStr := unsafe.String(leaf.key, leaf.len)
-		keyStr = strings.Trim(keyStr, string(t.end))
+		keyStr = strings.Trim(keyStr, string('\x00'))
 		return K(keyStr), leaf.value, true
 	}
 
@@ -67,7 +65,7 @@ func (t *collationSortedTree[K, V]) Minimum() (K, V, bool) {
 func (t *collationSortedTree[K, V]) Maximum() (K, V, bool) {
 	if leaf := maximum[K, V, *collateLeafNode[K, V]](t.root); leaf != nil {
 		keyStr := unsafe.String(leaf.key, leaf.len)
-		keyStr = strings.Trim(keyStr, string(t.end))
+		keyStr = strings.Trim(keyStr, string('\x00'))
 		return K(keyStr), leaf.value, true
 	}
 

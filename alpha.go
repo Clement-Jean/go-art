@@ -19,27 +19,17 @@ func (n *alphaLeafNode[K, V]) getValue() V             { return n.value }
 
 type alphaSortedTree[K chars, V any] struct {
 	root nodeRef
-	end  byte
 	bck  AlphabeticalOrderKey[K]
 }
 
 func NewAlphaSortedTree[K chars, V any](opts ...func(*alphaSortedTree[K, V])) Tree[K, V] {
-	t := &alphaSortedTree[K, V]{
-		end: '\x00',
-		bck: AlphabeticalOrderKey[K]{},
-	}
+	t := &alphaSortedTree[K, V]{}
 
 	for _, opt := range opts {
 		opt(t)
 	}
 
 	return t
-}
-
-func WithEndByte[K chars, V any](b byte) func(*alphaSortedTree[K, V]) {
-	return func(t *alphaSortedTree[K, V]) {
-		t.end = b
-	}
 }
 
 func (t *alphaSortedTree[K, V]) Minimum() (K, V, bool) {
@@ -72,7 +62,7 @@ func (t *alphaSortedTree[K, V]) Maximum() (K, V, bool) {
 
 func (t *alphaSortedTree[K, V]) Insert(key K, val V) {
 	_, keyStr := t.bck.Transform(key)
-	keyStr = append(keyStr, t.end)
+	keyStr = append(keyStr, '\x00')
 	leaf := &alphaLeafNode[K, V]{
 		key:   unsafe.SliceData(keyStr),
 		value: val,
@@ -84,7 +74,7 @@ func (t *alphaSortedTree[K, V]) Insert(key K, val V) {
 
 func (t *alphaSortedTree[K, V]) Search(key K) (V, bool) {
 	_, keyStr := t.bck.Transform(key)
-	keyStr = append(keyStr, t.end)
+	keyStr = append(keyStr, '\x00')
 
 	return search[K, V, *alphaLeafNode[K, V]](t.root, keyStr, keyStr)
 }
@@ -95,7 +85,7 @@ func (t *alphaSortedTree[K, V]) Delete(key K) {
 	}
 
 	_, keyStr := t.bck.Transform(key)
-	keyStr = append(keyStr, t.end)
+	keyStr = append(keyStr, '\x00')
 
 	delete[K, V, *alphaLeafNode[K, V]](&t.root, keyStr, keyStr)
 }
