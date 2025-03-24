@@ -1,8 +1,6 @@
 package art
 
-import (
-	"unsafe"
-)
+import "unsafe"
 
 const (
 	minNode4     = uint8(2)
