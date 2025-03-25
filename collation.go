@@ -21,14 +21,14 @@ func (n *collateLeafNode[K, V]) getTransformKey() []byte { return unsafe.Slice(n
 func (n *collateLeafNode[K, V]) getValue() V             { return n.value }
 func (n *collateLeafNode[K, V]) setValue(val V)          { n.value = val }
 
-type collationSortedTree[K chars, V any] struct {
+type collationSortedTree[K chars | []rune, V any] struct {
 	buf  *collate.Buffer
 	c    *collate.Collator
 	root nodeRef
 	size int
 }
 
-func NewCollationSortedTree[K chars, V any](opts ...func(*collationSortedTree[K, V])) Tree[K, V] {
+func NewCollationSortedTree[K chars | []rune, V any](opts ...func(*collationSortedTree[K, V])) Tree[K, V] {
 	t := &collationSortedTree[K, V]{
 		c:   collate.New(language.Und),
 		buf: &collate.Buffer{},

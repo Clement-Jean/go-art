@@ -24,14 +24,14 @@ type BinaryComparableKey[K nodeKey] interface {
 type AlphabeticalOrderKey[K chars] struct{}
 
 func (aok AlphabeticalOrderKey[K]) Transform(k K) ([]byte, []byte) {
-	b := []byte(string(k))
+	b := []byte(k)
 	return b, b
 }
 func (aok AlphabeticalOrderKey[K]) Restore(b []byte) K { return K(string(b)) }
 
 var _ BinaryComparableKey[[]byte] = AlphabeticalOrderKey[[]byte]{}
 
-type CollationOrderKey[K string | []byte | []rune] struct {
+type CollationOrderKey[K chars | []rune] struct {
 	c   *collate.Collator
 	buf *collate.Buffer
 	src K

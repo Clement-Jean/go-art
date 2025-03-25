@@ -35,7 +35,7 @@ type node struct {
 }
 
 type chars interface {
-	string | []byte | []rune
+	string | []byte
 }
 
 type ints interface {
