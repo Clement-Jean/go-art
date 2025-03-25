@@ -27,7 +27,7 @@ func (aok AlphabeticalOrderKey[K]) Transform(k K) ([]byte, []byte) {
 	b := []byte(k)
 	return b, b
 }
-func (aok AlphabeticalOrderKey[K]) Restore(b []byte) K { return K(string(b)) }
+func (aok AlphabeticalOrderKey[K]) Restore(b []byte) K { return K(b) }
 
 var _ BinaryComparableKey[[]byte] = AlphabeticalOrderKey[[]byte]{}
 
