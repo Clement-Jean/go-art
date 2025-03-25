@@ -6,15 +6,13 @@ import (
 )
 
 type signedLeafNode[K nodeKey, V any] struct {
-	key   *byte
 	value V
+	key   *byte
 	len   uint32
 }
 
-func (n *signedLeafNode[K, V]) getKey() *byte           { return n.key }
-func (n *signedLeafNode[K, V]) getTransformKey() *byte  { return n.key }
-func (n *signedLeafNode[K, V]) getLen() uint32          { return n.len }
-func (n *signedLeafNode[K, V]) getTransformLen() uint32 { return n.len }
+func (n *signedLeafNode[K, V]) getKey() []byte          { return unsafe.Slice(n.key, n.len) }
+func (n *signedLeafNode[K, V]) getTransformKey() []byte { return unsafe.Slice(n.key, n.len) }
 func (n *signedLeafNode[K, V]) getValue() V             { return n.value }
 
 type signedSortedTree[K ints, V any] struct {
@@ -29,17 +27,15 @@ func NewSignedBinaryTree[K ints, V any]() Tree[K, V] {
 
 func (t *signedSortedTree[K, V]) All() iter.Seq2[K, V] {
 	return all(t.root, func(l *signedLeafNode[K, V]) K {
-		keyStr := unsafe.Slice(l.key, l.len)
-		keyStr = keyStr[:len(keyStr)-1] // drop end byte
-		return t.bck.Restore(keyStr)
+		keyS := l.getKey()[:l.len-1] // drop end byte
+		return t.bck.Restore(keyS)
 	})
 }
 
 func (t *signedSortedTree[K, V]) Backward() iter.Seq2[K, V] {
 	return backward(t.root, func(l *signedLeafNode[K, V]) K {
-		keyStr := unsafe.Slice(l.key, l.len)
-		keyStr = keyStr[:len(keyStr)-1] // drop end byte
-		return t.bck.Restore(keyStr)
+		keyS := l.getKey()[:l.len-1] // drop end byte
+		return t.bck.Restore(keyS)
 	})
 }
 
@@ -48,10 +44,10 @@ func (t *signedSortedTree[K, V]) Delete(key K) bool {
 		return false
 	}
 
-	_, keyStr := t.bck.Transform(key)
-	keyStr = append(keyStr, '\x00')
+	_, keyS := t.bck.Transform(key)
+	keyS = append(keyS, '\x00')
 
-	ok := delete[K, V, *signedLeafNode[K, V]](&t.root, keyStr, keyStr)
+	ok := delete[K, V, *signedLeafNode[K, V]](&t.root, keyS, keyS)
 
 	if ok {
 		t.size--
@@ -60,24 +56,23 @@ func (t *signedSortedTree[K, V]) Delete(key K) bool {
 }
 
 func (t *signedSortedTree[K, V]) Insert(key K, val V) {
-	_, keyStr := t.bck.Transform(key)
-	keyStr = append(keyStr, '\x00')
+	_, keyS := t.bck.Transform(key)
+	keyS = append(keyS, '\x00')
 	leaf := &signedLeafNode[K, V]{
-		key:   unsafe.SliceData(keyStr),
+		key:   unsafe.SliceData(keyS),
 		value: val,
-		len:   uint32(len(keyStr)),
+		len:   uint32(len(keyS)),
 	}
 
-	if insert[K](&t.root, keyStr, keyStr, leaf) {
+	if insert[K](&t.root, keyS, keyS, leaf) {
 		t.size++
 	}
 }
 
 func (t *signedSortedTree[K, V]) Maximum() (K, V, bool) {
-	if leaf := maximum[K, V, *signedLeafNode[K, V]](t.root); leaf != nil {
-		keyStr := unsafe.Slice(leaf.key, leaf.len)
-		keyStr = keyStr[:len(keyStr)-1]
-		return t.bck.Restore(keyStr), leaf.value, true
+	if l := maximum[K, V, *signedLeafNode[K, V]](t.root); l != nil {
+		keyS := l.getKey()[:l.len-1] // drop end byte
+		return t.bck.Restore(keyS), l.value, true
 	}
 
 	var (
@@ -88,10 +83,9 @@ func (t *signedSortedTree[K, V]) Maximum() (K, V, bool) {
 }
 
 func (t *signedSortedTree[K, V]) Minimum() (K, V, bool) {
-	if leaf := minimum[K, V, *signedLeafNode[K, V]](t.root); leaf != nil {
-		keyStr := unsafe.Slice(leaf.key, leaf.len)
-		keyStr = keyStr[:len(keyStr)-1]
-		return t.bck.Restore(keyStr), leaf.value, true
+	if l := minimum[K, V, *signedLeafNode[K, V]](t.root); l != nil {
+		keyS := l.getKey()[:l.len-1] // drop end byte
+		return t.bck.Restore(keyS), l.value, true
 	}
 
 	var (
@@ -102,10 +96,10 @@ func (t *signedSortedTree[K, V]) Minimum() (K, V, bool) {
 }
 
 func (t *signedSortedTree[K, V]) Search(key K) (V, bool) {
-	_, keyStr := t.bck.Transform(key)
-	keyStr = append(keyStr, '\x00')
+	_, keyS := t.bck.Transform(key)
+	keyS = append(keyS, '\x00')
 
-	return search[K, V, *signedLeafNode[K, V]](t.root, keyStr, keyStr)
+	return search[K, V, *signedLeafNode[K, V]](t.root, keyS, keyS)
 }
 
 func (t *signedSortedTree[K, V]) Size() int { return t.size }

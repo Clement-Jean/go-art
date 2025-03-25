@@ -1,6 +1,8 @@
 package art
 
-import "unsafe"
+import (
+	"unsafe"
+)
 
 const (
 	minNode4     = uint8(2)
@@ -53,10 +55,8 @@ type nodeKey interface {
 }
 
 type nodeLeaf[K nodeKey, V any] interface {
-	getKey() *byte
-	getTransformKey() *byte
-	getLen() uint32
-	getTransformLen() uint32
+	getKey() []byte
+	getTransformKey() []byte
 	getValue() V
 
 	*alphaLeafNode[K, V] |
@@ -249,7 +249,8 @@ func (n4 *node4) deleteChild(ref *nodeRef, b byte) {
 				prefix += subPrefix
 			}
 
-			copy(childNode.prefix[prefix:], childNode.prefix[:])
+			hiLimit := min(maxPrefixLen, prefix)
+			copy(childNode.prefix[:], n4.prefix[:hiLimit])
 			childNode.prefixLen += n4.prefixLen + 1
 		}
 		*ref = child

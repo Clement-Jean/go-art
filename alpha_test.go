@@ -160,13 +160,19 @@ func TestAlphaInsertDeleteWords(t *testing.T) {
 
 	scanner := bufio.NewScanner(file)
 
+	size := 0
 	for scanner.Scan() {
 		line := scanner.Text()
 		tr.Insert(line, len(line))
+		size++
 	}
 
 	if err := scanner.Err(); err != nil {
 		t.Fatalf("error reading file: %s", err)
+	}
+
+	if tr.Size() != size {
+		t.Fatalf("expected size %d, got %d", size, tr.Size())
 	}
 
 	if _, err := file.Seek(0, 0); err != nil {
@@ -182,6 +188,14 @@ func TestAlphaInsertDeleteWords(t *testing.T) {
 
 	if err := scanner.Err(); err != nil {
 		t.Fatalf("error reading file: %s", err)
+	}
+
+	if tr.Size() != 0 {
+		t.Fatalf("expected size 0, got %d", tr.Size())
+	}
+
+	if _, err := file.Seek(0, 0); err != nil {
+		t.Fatalf("error seeking file: %s", err)
 	}
 
 	scanner = bufio.NewScanner(file)

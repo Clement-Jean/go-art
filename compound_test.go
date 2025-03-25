@@ -9,8 +9,8 @@ import (
 )
 
 type Account struct {
-	ID uint
 	name string
+	ID   uint
 }
 
 func (acc *Account) String() string {
@@ -23,7 +23,7 @@ func (ak AccountKey) Transform(a Account) ([]byte, []byte) {
 	var (
 		ubk art.UnsignedBinaryKey[uint]
 		aok art.AlphabeticalOrderKey[string]
-		b []byte
+		b   []byte
 	)
 
 	_, c := ubk.Transform(a.ID)
@@ -34,7 +34,7 @@ func (ak AccountKey) Transform(a Account) ([]byte, []byte) {
 }
 func (ak AccountKey) Restore(b []byte) Account {
 	var (
-		a Account
+		a   Account
 		ubk art.UnsignedBinaryKey[uint]
 		aok art.AlphabeticalOrderKey[string]
 	)

@@ -55,7 +55,7 @@ func prefixMismatch[K nodeKey, V any, L nodeLeaf[K, V]](n nodeRef, key []byte, d
 
 	if node.prefixLen > maxPrefixLen {
 		leaf := minimum[K, V, L](n)
-		leafKey := unsafe.Slice(leaf.getTransformKey(), leaf.getTransformLen())
+		leafKey := leaf.getTransformKey()
 
 		maxCmp = min(int(len(leafKey)), len(key)) - depth
 		for ; idx < maxCmp; idx++ {
@@ -84,13 +84,12 @@ func insert[K nodeKey, V any, L nodeLeaf[K, V]](root *nodeRef, originalKey, tran
 	for ref.pointer != nil {
 		if ref.tag == nodeKindLeaf {
 			nl := (L)(ref.pointer)
-			leafKeyStr := unsafe.Slice(nl.getKey(), nl.getLen())
 
-			if bytes.Compare(originalKey, leafKeyStr) == 0 {
+			if bytes.Compare(originalKey, nl.getKey()) == 0 {
 				return false
 			}
 
-			leafKey := unsafe.Slice(nl.getTransformKey(), nl.getTransformLen())
+			leafKey := nl.getTransformKey()
 			newNode := new(node4)
 
 			longestPrefix := longestCommonPrefix(leafKey, transformKey, depth)
@@ -130,7 +129,7 @@ func insert[K nodeKey, V any, L nodeLeaf[K, V]](root *nodeRef, originalKey, tran
 			} else {
 				node.prefixLen -= uint32(prefixDiff + 1)
 				leafMin := minimum[K, V, L](n)
-				leafKey := unsafe.Slice(leafMin.getTransformKey(), leafMin.getTransformLen())
+				leafKey := leafMin.getTransformKey()
 
 				newNode.addChild(ref, leafKey[depth+prefixDiff], n)
 				loLimit := depth + prefixDiff + 1
@@ -165,8 +164,8 @@ func search[K nodeKey, V any, L nodeLeaf[K, V]](root nodeRef, originalKey, trans
 	for n.pointer != nil {
 		if n.tag == nodeKindLeaf {
 			leaf := (L)(n.pointer)
-			leafKeyStr := unsafe.Slice(leaf.getKey(), leaf.getLen())
-			if bytes.Compare(leafKeyStr, originalKey) == 0 {
+
+			if bytes.Compare(leaf.getKey(), originalKey) == 0 {
 				return leaf.getValue(), true
 			}
 			return notFound, false
@@ -199,12 +198,12 @@ func delete[K nodeKey, V any, L nodeLeaf[K, V]](root *nodeRef, originalKey, tran
 	n := *ref
 	depth := 0
 
-	for {
+	for n.pointer != nil {
 		if n.tag == nodeKindLeaf {
 			leaf := (L)(n.pointer)
-			leafKeyStr := unsafe.Slice(leaf.getKey(), leaf.getLen())
-			if bytes.Compare(leafKeyStr, originalKey) == 0 {
-				ref.pointer = nil
+
+			if bytes.Compare(leaf.getKey(), originalKey) == 0 {
+				*ref = nodeRef{}
 				return true
 			}
 
@@ -227,10 +226,9 @@ func delete[K nodeKey, V any, L nodeLeaf[K, V]](root *nodeRef, originalKey, tran
 		}
 
 		if child.tag == nodeKindLeaf {
-			leaf := (L)(n.pointer)
-			leafKeyStr := unsafe.Slice(leaf.getKey(), leaf.getLen())
+			leaf := (L)(child.pointer)
 
-			if bytes.Compare(leafKeyStr, originalKey) == 0 {
+			if bytes.Compare(leaf.getKey(), originalKey) == 0 {
 				ref.deleteChild(transformKey[depth])
 				return true
 			}
@@ -242,6 +240,7 @@ func delete[K nodeKey, V any, L nodeLeaf[K, V]](root *nodeRef, originalKey, tran
 			depth++
 		}
 	}
+	return false
 }
 
 func minimum[K nodeKey, V any, L nodeLeaf[K, V]](ref nodeRef) L {

@@ -2,7 +2,6 @@ package art
 
 import (
 	"iter"
-	"strings"
 	"unsafe"
 
 	"golang.org/x/text/collate"
@@ -10,17 +9,15 @@ import (
 )
 
 type collateLeafNode[K nodeKey, V any] struct {
+	value     V
 	colKey    *byte
 	key       *byte
-	value     V
 	colKeyLen uint32
-	len       uint32
+	keyLen    uint32
 }
 
-func (n *collateLeafNode[K, V]) getKey() *byte           { return n.key }
-func (n *collateLeafNode[K, V]) getTransformKey() *byte  { return n.colKey }
-func (n *collateLeafNode[K, V]) getLen() uint32          { return n.len }
-func (n *collateLeafNode[K, V]) getTransformLen() uint32 { return n.colKeyLen }
+func (n *collateLeafNode[K, V]) getKey() []byte          { return unsafe.Slice(n.key, n.keyLen) }
+func (n *collateLeafNode[K, V]) getTransformKey() []byte { return unsafe.Slice(n.colKey, n.colKeyLen) }
 func (n *collateLeafNode[K, V]) getValue() V             { return n.value }
 
 type collationSortedTree[K chars, V any] struct {
@@ -52,14 +49,14 @@ func WithCollator[K chars, V any](c *collate.Collator) func(*collationSortedTree
 // All returns an iterator over the tree in collation order.
 func (t *collationSortedTree[K, V]) All() iter.Seq2[K, V] {
 	return all(t.root, func(l *collateLeafNode[K, V]) K {
-		return K(unsafe.String(l.key, l.len))
+		return K(string(l.getKey()))
 	})
 }
 
 // Backward returns an iterator over the tree in reverse collation order.
 func (t *collationSortedTree[K, V]) Backward() iter.Seq2[K, V] {
 	return backward(t.root, func(l *collateLeafNode[K, V]) K {
-		return K(unsafe.String(l.key, l.len))
+		return K(string(l.getKey()))
 	})
 }
 
@@ -73,9 +70,9 @@ func (t *collationSortedTree[K, V]) Delete(key K) bool {
 		buf: t.buf,
 		c:   t.c,
 	}
-	keyStr, colKey := bck.Transform(key)
+	keyS, colKey := bck.Transform(key)
 
-	ok := delete[K, V, *collateLeafNode[K, V]](&t.root, keyStr, colKey)
+	ok := delete[K, V, *collateLeafNode[K, V]](&t.root, keyS, colKey)
 
 	if ok {
 		t.size--
@@ -90,25 +87,23 @@ func (t *collationSortedTree[K, V]) Insert(key K, val V) {
 		c:   t.c,
 	}
 
-	keyStr, colKey := bck.Transform(key)
+	keyS, colKey := bck.Transform(key)
 	leaf := &collateLeafNode[K, V]{
 		colKey:    unsafe.SliceData(colKey),
-		key:       unsafe.SliceData(keyStr),
+		key:       unsafe.SliceData(keyS),
 		value:     val,
+		keyLen:    uint32(len(keyS)),
 		colKeyLen: uint32(len(colKey)),
-		len:       uint32(len(keyStr)),
 	}
 
-	if insert[K](&t.root, keyStr, colKey, leaf) {
+	if insert[K](&t.root, keyS, colKey, leaf) {
 		t.size++
 	}
 }
 
 func (t *collationSortedTree[K, V]) Maximum() (K, V, bool) {
-	if leaf := maximum[K, V, *collateLeafNode[K, V]](t.root); leaf != nil {
-		keyStr := unsafe.String(leaf.key, leaf.len)
-		keyStr = strings.Trim(keyStr, string('\x00'))
-		return K(keyStr), leaf.value, true
+	if l := maximum[K, V, *collateLeafNode[K, V]](t.root); l != nil {
+		return K(string(l.getKey())), l.value, true
 	}
 
 	var (
@@ -119,10 +114,8 @@ func (t *collationSortedTree[K, V]) Maximum() (K, V, bool) {
 }
 
 func (t *collationSortedTree[K, V]) Minimum() (K, V, bool) {
-	if leaf := minimum[K, V, *collateLeafNode[K, V]](t.root); leaf != nil {
-		keyStr := unsafe.String(leaf.key, leaf.len)
-		keyStr = strings.Trim(keyStr, string('\x00'))
-		return K(keyStr), leaf.value, true
+	if l := minimum[K, V, *collateLeafNode[K, V]](t.root); l != nil {
+		return K(string(l.getKey())), l.value, true
 	}
 
 	var (
@@ -139,9 +132,9 @@ func (t *collationSortedTree[K, V]) Search(key K) (V, bool) {
 		buf: t.buf,
 		c:   t.c,
 	}
-	keyStr, colKey := bck.Transform(key)
+	keyS, colKey := bck.Transform(key)
 
-	return search[K, V, *collateLeafNode[K, V]](t.root, keyStr, colKey)
+	return search[K, V, *collateLeafNode[K, V]](t.root, keyS, colKey)
 }
 
 func (t *collationSortedTree[K, V]) Size() int { return t.size }
