@@ -14,6 +14,7 @@ type unsignedLeafNode[K nodeKey, V any] struct {
 func (n *unsignedLeafNode[K, V]) getKey() []byte          { return unsafe.Slice(n.key, n.len) }
 func (n *unsignedLeafNode[K, V]) getTransformKey() []byte { return unsafe.Slice(n.key, n.len) }
 func (n *unsignedLeafNode[K, V]) getValue() V             { return n.value }
+func (n *unsignedLeafNode[K, V]) setValue(val V)          { n.value = val }
 
 type unsignedSortedTree[K uints, V any] struct {
 	root nodeRef

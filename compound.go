@@ -14,6 +14,7 @@ type compoundLeafNode[K nodeKey, V any] struct {
 func (n *compoundLeafNode[K, V]) getKey() []byte          { return unsafe.Slice(n.key, n.len) }
 func (n *compoundLeafNode[K, V]) getTransformKey() []byte { return unsafe.Slice(n.key, n.len) }
 func (n *compoundLeafNode[K, V]) getValue() V             { return n.value }
+func (n *compoundLeafNode[K, V]) setValue(val V)          { n.value = val }
 
 type compoundSortedTree[K any, V any] struct {
 	bck  BinaryComparableKey[K]

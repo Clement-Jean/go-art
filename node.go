@@ -58,6 +58,7 @@ type nodeLeaf[K nodeKey, V any] interface {
 	getKey() []byte
 	getTransformKey() []byte
 	getValue() V
+	setValue(V)
 
 	*alphaLeafNode[K, V] |
 		*collateLeafNode[K, V] |

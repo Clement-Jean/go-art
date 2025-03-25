@@ -19,6 +19,7 @@ type collateLeafNode[K nodeKey, V any] struct {
 func (n *collateLeafNode[K, V]) getKey() []byte          { return unsafe.Slice(n.key, n.keyLen) }
 func (n *collateLeafNode[K, V]) getTransformKey() []byte { return unsafe.Slice(n.colKey, n.colKeyLen) }
 func (n *collateLeafNode[K, V]) getValue() V             { return n.value }
+func (n *collateLeafNode[K, V]) setValue(val V)          { n.value = val }
 
 type collationSortedTree[K chars, V any] struct {
 	buf  *collate.Buffer

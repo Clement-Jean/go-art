@@ -14,6 +14,7 @@ type signedLeafNode[K nodeKey, V any] struct {
 func (n *signedLeafNode[K, V]) getKey() []byte          { return unsafe.Slice(n.key, n.len) }
 func (n *signedLeafNode[K, V]) getTransformKey() []byte { return unsafe.Slice(n.key, n.len) }
 func (n *signedLeafNode[K, V]) getValue() V             { return n.value }
+func (n *signedLeafNode[K, V]) setValue(val V)          { n.value = val }
 
 type signedSortedTree[K ints, V any] struct {
 	root nodeRef

@@ -14,6 +14,7 @@ type floatLeafNode[K nodeKey, V any] struct {
 func (n *floatLeafNode[K, V]) getKey() []byte          { return unsafe.Slice(n.key, n.len) }
 func (n *floatLeafNode[K, V]) getTransformKey() []byte { return unsafe.Slice(n.key, n.len) }
 func (n *floatLeafNode[K, V]) getValue() V             { return n.value }
+func (n *floatLeafNode[K, V]) setValue(val V)          { n.value = val }
 
 type floatSortedTree[K floats, V any] struct {
 	root nodeRef
