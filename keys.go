@@ -39,7 +39,8 @@ type CollationOrderKey[K string | []byte | []rune] struct {
 
 func (cok CollationOrderKey[K]) Transform(k K) ([]byte, []byte) {
 	cok.src = k
-	return []byte(string(k)), cok.c.KeyFromString(cok.buf, string(k))
+	b := []byte(string(k))
+	return b, cok.c.Key(cok.buf, b)
 }
 func (cok CollationOrderKey[K]) Restore(b []byte) K { return cok.src }
 
