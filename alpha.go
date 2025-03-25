@@ -22,14 +22,8 @@ type alphaSortedTree[K chars, V any] struct {
 	bck  AlphabeticalOrderKey[K]
 }
 
-func NewAlphaSortedTree[K chars, V any](opts ...func(*alphaSortedTree[K, V])) Tree[K, V] {
-	t := &alphaSortedTree[K, V]{}
-
-	for _, opt := range opts {
-		opt(t)
-	}
-
-	return t
+func NewAlphaSortedTree[K chars, V any]() Tree[K, V] {
+	return &alphaSortedTree[K, V]{}
 }
 
 func (t *alphaSortedTree[K, V]) Minimum() (K, V, bool) {
@@ -79,15 +73,15 @@ func (t *alphaSortedTree[K, V]) Search(key K) (V, bool) {
 	return search[K, V, *alphaLeafNode[K, V]](t.root, keyStr, keyStr)
 }
 
-func (t *alphaSortedTree[K, V]) Delete(key K) {
+func (t *alphaSortedTree[K, V]) Delete(key K) bool {
 	if t.root.pointer == nil {
-		return
+		return false
 	}
 
 	_, keyStr := t.bck.Transform(key)
 	keyStr = append(keyStr, '\x00')
 
-	delete[K, V, *alphaLeafNode[K, V]](&t.root, keyStr, keyStr)
+	return delete[K, V, *alphaLeafNode[K, V]](&t.root, keyStr, keyStr)
 }
 
 // All returns an iterator over the tree in alphabetical order.

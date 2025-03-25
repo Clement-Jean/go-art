@@ -44,15 +44,15 @@ func (t *compoundSortedTree[K, V]) Backward() iter.Seq2[K, V] {
 	})
 }
 
-func (t *compoundSortedTree[K, V]) Delete(key K) {
+func (t *compoundSortedTree[K, V]) Delete(key K) bool {
 	if t.root.pointer == nil {
-		return
+		return false
 	}
 
 	_, keyStr := t.bck.Transform(key)
 	keyStr = append(keyStr, '\x00')
 
-	delete[K, V, *compoundLeafNode[K, V]](&t.root, keyStr, keyStr)
+	return delete[K, V, *compoundLeafNode[K, V]](&t.root, keyStr, keyStr)
 }
 
 func (t *compoundSortedTree[K, V]) Insert(key K, val V) {

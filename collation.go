@@ -108,9 +108,9 @@ func (t *collationSortedTree[K, V]) Search(key K) (V, bool) {
 }
 
 // Delete deletes a element with the given key.
-func (t *collationSortedTree[K, V]) Delete(key K) {
+func (t *collationSortedTree[K, V]) Delete(key K) bool {
 	if t.root.pointer == nil {
-		return
+		return false
 	}
 
 	bck := CollationOrderKey[K]{
@@ -119,7 +119,7 @@ func (t *collationSortedTree[K, V]) Delete(key K) {
 	}
 	keyStr, colKey := bck.Transform(key)
 
-	delete[K, V, *collateLeafNode[K, V]](&t.root, keyStr, colKey)
+	return delete[K, V, *collateLeafNode[K, V]](&t.root, keyStr, colKey)
 }
 
 // All returns an iterator over the tree in collation order.

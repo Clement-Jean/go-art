@@ -42,15 +42,15 @@ func (t *floatSortedTree[K, V]) Backward() iter.Seq2[K, V] {
 	})
 }
 
-func (t *floatSortedTree[K, V]) Delete(key K) {
+func (t *floatSortedTree[K, V]) Delete(key K) bool {
 	if t.root.pointer == nil {
-		return
+		return false
 	}
 
 	_, keyStr := t.bck.Transform(key)
 	keyStr = append(keyStr, '\x00')
 
-	delete[K, V, *floatLeafNode[K, V]](&t.root, keyStr, keyStr)
+	return delete[K, V, *floatLeafNode[K, V]](&t.root, keyStr, keyStr)
 }
 
 func (t *floatSortedTree[K, V]) Insert(key K, val V) {

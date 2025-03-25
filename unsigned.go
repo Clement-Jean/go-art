@@ -42,15 +42,15 @@ func (t *unsignedSortedTree[K, V]) Backward() iter.Seq2[K, V] {
 	})
 }
 
-func (t *unsignedSortedTree[K, V]) Delete(key K) {
+func (t *unsignedSortedTree[K, V]) Delete(key K) bool {
 	if t.root.pointer == nil {
-		return
+		return false
 	}
 
 	_, keyStr := t.bck.Transform(key)
 	keyStr = append(keyStr, '\x00')
 
-	delete[K, V, *unsignedLeafNode[K, V]](&t.root, keyStr, keyStr)
+	return delete[K, V, *unsignedLeafNode[K, V]](&t.root, keyStr, keyStr)
 }
 
 func (t *unsignedSortedTree[K, V]) Insert(key K, val V) {

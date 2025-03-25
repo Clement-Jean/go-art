@@ -15,7 +15,7 @@ type Tree[K nodeKey, V any] interface {
 	Search(K) (V, bool)
 
 	// Delete deletes a element with the given key.
-	Delete(K)
+	Delete(K) bool
 
 	// Minimum find the minimum K/V pair based on the key.
 	Minimum() (K, V, bool)
@@ -191,7 +191,7 @@ func search[K nodeKey, V any, L nodeLeaf[K, V]](root nodeRef, originalKey, trans
 	return notFound, false
 }
 
-func delete[K nodeKey, V any, L nodeLeaf[K, V]](root *nodeRef, originalKey, transformKey []byte) {
+func delete[K nodeKey, V any, L nodeLeaf[K, V]](root *nodeRef, originalKey, transformKey []byte) bool {
 	ref := root
 	n := *ref
 	depth := 0
@@ -202,17 +202,17 @@ func delete[K nodeKey, V any, L nodeLeaf[K, V]](root *nodeRef, originalKey, tran
 			leafKeyStr := unsafe.Slice(leaf.getKey(), leaf.getLen())
 			if bytes.Compare(leafKeyStr, originalKey) == 0 {
 				ref.pointer = nil
-				return
+				return true
 			}
 
-			return
+			return false
 		}
 
 		node := n.node()
 		if node.prefixLen != 0 {
 			prefixLen := node.checkPrefix(transformKey, depth)
 			if prefixLen != int(min(maxPrefixLen, node.prefixLen)) {
-				return
+				return false
 			}
 			depth = depth + int(node.prefixLen)
 		}
@@ -220,7 +220,7 @@ func delete[K nodeKey, V any, L nodeLeaf[K, V]](root *nodeRef, originalKey, tran
 		child := n.findChild(transformKey[depth])
 
 		if child == nil {
-			return
+			return false
 		}
 
 		if child.tag == nodeKindLeaf {
@@ -229,10 +229,10 @@ func delete[K nodeKey, V any, L nodeLeaf[K, V]](root *nodeRef, originalKey, tran
 
 			if bytes.Compare(leafKeyStr, originalKey) == 0 {
 				ref.deleteChild(transformKey[depth])
-				return
+				return true
 			}
 
-			return
+			return false
 		} else {
 			n = *child
 			ref = child
