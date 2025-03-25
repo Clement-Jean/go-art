@@ -20,6 +20,7 @@ func (n *unsignedLeafNode[K, V]) getValue() V             { return n.value }
 type unsignedSortedTree[K uints, V any] struct {
 	root nodeRef
 	bck  UnsignedBinaryKey[K]
+	size int
 }
 
 func NewUnsignedBinaryTree[K uints, V any]() Tree[K, V] {
@@ -50,7 +51,12 @@ func (t *unsignedSortedTree[K, V]) Delete(key K) bool {
 	_, keyStr := t.bck.Transform(key)
 	keyStr = append(keyStr, '\x00')
 
-	return delete[K, V, *unsignedLeafNode[K, V]](&t.root, keyStr, keyStr)
+	ok := delete[K, V, *unsignedLeafNode[K, V]](&t.root, keyStr, keyStr)
+
+	if ok {
+		t.size--
+	}
+	return ok
 }
 
 func (t *unsignedSortedTree[K, V]) Insert(key K, val V) {
@@ -62,7 +68,9 @@ func (t *unsignedSortedTree[K, V]) Insert(key K, val V) {
 		len:   uint32(len(keyStr)),
 	}
 
-	insert[K](&t.root, keyStr, keyStr, leaf)
+	if insert[K](&t.root, keyStr, keyStr, leaf) {
+		t.size++
+	}
 }
 
 func (t *unsignedSortedTree[K, V]) Maximum() (K, V, bool) {
@@ -99,3 +107,5 @@ func (t *unsignedSortedTree[K, V]) Search(key K) (V, bool) {
 
 	return search[K, V, *unsignedLeafNode[K, V]](t.root, keyStr, keyStr)
 }
+
+func (t *unsignedSortedTree[K, V]) Size() int { return t.size }

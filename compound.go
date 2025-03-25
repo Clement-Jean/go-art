@@ -20,6 +20,7 @@ func (n *compoundLeafNode[K, V]) getValue() V             { return n.value }
 type compoundSortedTree[K any, V any] struct {
 	root nodeRef
 	bck  BinaryComparableKey[K]
+	size int
 }
 
 func NewCompoundTree[K any, V any](bck BinaryComparableKey[K]) Tree[K, V] {
@@ -52,7 +53,12 @@ func (t *compoundSortedTree[K, V]) Delete(key K) bool {
 	_, keyStr := t.bck.Transform(key)
 	keyStr = append(keyStr, '\x00')
 
-	return delete[K, V, *compoundLeafNode[K, V]](&t.root, keyStr, keyStr)
+	ok := delete[K, V, *compoundLeafNode[K, V]](&t.root, keyStr, keyStr)
+
+	if ok {
+		t.size--
+	}
+	return ok
 }
 
 func (t *compoundSortedTree[K, V]) Insert(key K, val V) {
@@ -64,7 +70,9 @@ func (t *compoundSortedTree[K, V]) Insert(key K, val V) {
 		len:   uint32(len(keyStr)),
 	}
 
-	insert[K](&t.root, keyStr, keyStr, leaf)
+	if insert[K](&t.root, keyStr, keyStr, leaf) {
+		t.size++
+	}
 }
 
 func (t *compoundSortedTree[K, V]) Maximum() (K, V, bool) {
@@ -101,3 +109,5 @@ func (t *compoundSortedTree[K, V]) Search(key K) (V, bool) {
 
 	return search[K, V, *compoundLeafNode[K, V]](t.root, keyStr, keyStr)
 }
+
+func (t *compoundSortedTree[K, V]) Size() int { return t.size }

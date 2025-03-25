@@ -25,6 +25,8 @@ type Tree[K nodeKey, V any] interface {
 
 	All() iter.Seq2[K, V]
 	Backward() iter.Seq2[K, V]
+
+	Size() int
 }
 
 func longestCommonPrefix(key, other []byte, depth int) int {
@@ -67,12 +69,12 @@ func prefixMismatch[K nodeKey, V any, L nodeLeaf[K, V]](n nodeRef, key []byte, d
 	return idx
 }
 
-func insert[K nodeKey, V any, L nodeLeaf[K, V]](root *nodeRef, originalKey, transformKey []byte, leaf L) {
+func insert[K nodeKey, V any, L nodeLeaf[K, V]](root *nodeRef, originalKey, transformKey []byte, leaf L) bool {
 	leafRef := nodeRef{pointer: unsafe.Pointer(leaf), tag: nodeKindLeaf}
 
 	if root.pointer == nil {
 		*root = leafRef
-		return
+		return true
 	}
 
 	ref := root
@@ -85,7 +87,7 @@ func insert[K nodeKey, V any, L nodeLeaf[K, V]](root *nodeRef, originalKey, tran
 			leafKeyStr := unsafe.Slice(nl.getKey(), nl.getLen())
 
 			if bytes.Compare(originalKey, leafKeyStr) == 0 {
-				return
+				return false
 			}
 
 			leafKey := unsafe.Slice(nl.getTransformKey(), nl.getTransformLen())
@@ -101,7 +103,7 @@ func insert[K nodeKey, V any, L nodeLeaf[K, V]](root *nodeRef, originalKey, tran
 			splitPrefix := int(depth + longestPrefix)
 			newNode.addChild(ref, leafKey[splitPrefix], n)
 			newNode.addChild(ref, transformKey[splitPrefix], leafRef)
-			return
+			return true
 		}
 
 		node := ref.node()
@@ -136,7 +138,7 @@ func insert[K nodeKey, V any, L nodeLeaf[K, V]](root *nodeRef, originalKey, tran
 			}
 
 			newNode.addChild(ref, transformKey[depth+prefixDiff], leafRef)
-			return
+			return true
 		}
 
 	CONTINUE_SEARCH:
@@ -149,8 +151,9 @@ func insert[K nodeKey, V any, L nodeLeaf[K, V]](root *nodeRef, originalKey, tran
 		}
 
 		ref.addChild(transformKey[depth], leafRef)
-		return
+		return true
 	}
+	return false
 }
 
 func search[K nodeKey, V any, L nodeLeaf[K, V]](root nodeRef, originalKey, transformKey []byte) (V, bool) {

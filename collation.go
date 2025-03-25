@@ -27,6 +27,7 @@ type collationSortedTree[K chars, V any] struct {
 	buf  *collate.Buffer
 	c    *collate.Collator
 	root nodeRef
+	size int
 }
 
 func NewCollationSortedTree[K chars, V any](opts ...func(*collationSortedTree[K, V])) Tree[K, V] {
@@ -48,32 +49,38 @@ func WithCollator[K chars, V any](c *collate.Collator) func(*collationSortedTree
 	}
 }
 
-func (t *collationSortedTree[K, V]) Minimum() (K, V, bool) {
-	if leaf := minimum[K, V, *collateLeafNode[K, V]](t.root); leaf != nil {
-		keyStr := unsafe.String(leaf.key, leaf.len)
-		keyStr = strings.Trim(keyStr, string('\x00'))
-		return K(keyStr), leaf.value, true
-	}
-
-	var (
-		notFoundKey   K
-		notFoundValue V
-	)
-	return notFoundKey, notFoundValue, false
+// All returns an iterator over the tree in collation order.
+func (t *collationSortedTree[K, V]) All() iter.Seq2[K, V] {
+	return all(t.root, func(l *collateLeafNode[K, V]) K {
+		return K(unsafe.String(l.key, l.len))
+	})
 }
 
-func (t *collationSortedTree[K, V]) Maximum() (K, V, bool) {
-	if leaf := maximum[K, V, *collateLeafNode[K, V]](t.root); leaf != nil {
-		keyStr := unsafe.String(leaf.key, leaf.len)
-		keyStr = strings.Trim(keyStr, string('\x00'))
-		return K(keyStr), leaf.value, true
+// Backward returns an iterator over the tree in reverse collation order.
+func (t *collationSortedTree[K, V]) Backward() iter.Seq2[K, V] {
+	return backward(t.root, func(l *collateLeafNode[K, V]) K {
+		return K(unsafe.String(l.key, l.len))
+	})
+}
+
+// Delete deletes a element with the given key.
+func (t *collationSortedTree[K, V]) Delete(key K) bool {
+	if t.root.pointer == nil {
+		return false
 	}
 
-	var (
-		notFoundKey   K
-		notFoundValue V
-	)
-	return notFoundKey, notFoundValue, false
+	bck := CollationOrderKey[K]{
+		buf: t.buf,
+		c:   t.c,
+	}
+	keyStr, colKey := bck.Transform(key)
+
+	ok := delete[K, V, *collateLeafNode[K, V]](&t.root, keyStr, colKey)
+
+	if ok {
+		t.size--
+	}
+	return ok
 }
 
 // Insert inserts a key-value pair in the tree.
@@ -92,7 +99,37 @@ func (t *collationSortedTree[K, V]) Insert(key K, val V) {
 		len:       uint32(len(keyStr)),
 	}
 
-	insert[K](&t.root, keyStr, colKey, leaf)
+	if insert[K](&t.root, keyStr, colKey, leaf) {
+		t.size++
+	}
+}
+
+func (t *collationSortedTree[K, V]) Maximum() (K, V, bool) {
+	if leaf := maximum[K, V, *collateLeafNode[K, V]](t.root); leaf != nil {
+		keyStr := unsafe.String(leaf.key, leaf.len)
+		keyStr = strings.Trim(keyStr, string('\x00'))
+		return K(keyStr), leaf.value, true
+	}
+
+	var (
+		notFoundKey   K
+		notFoundValue V
+	)
+	return notFoundKey, notFoundValue, false
+}
+
+func (t *collationSortedTree[K, V]) Minimum() (K, V, bool) {
+	if leaf := minimum[K, V, *collateLeafNode[K, V]](t.root); leaf != nil {
+		keyStr := unsafe.String(leaf.key, leaf.len)
+		keyStr = strings.Trim(keyStr, string('\x00'))
+		return K(keyStr), leaf.value, true
+	}
+
+	var (
+		notFoundKey   K
+		notFoundValue V
+	)
+	return notFoundKey, notFoundValue, false
 }
 
 // Search searches for element with the given key.
@@ -107,31 +144,4 @@ func (t *collationSortedTree[K, V]) Search(key K) (V, bool) {
 	return search[K, V, *collateLeafNode[K, V]](t.root, keyStr, colKey)
 }
 
-// Delete deletes a element with the given key.
-func (t *collationSortedTree[K, V]) Delete(key K) bool {
-	if t.root.pointer == nil {
-		return false
-	}
-
-	bck := CollationOrderKey[K]{
-		buf: t.buf,
-		c:   t.c,
-	}
-	keyStr, colKey := bck.Transform(key)
-
-	return delete[K, V, *collateLeafNode[K, V]](&t.root, keyStr, colKey)
-}
-
-// All returns an iterator over the tree in collation order.
-func (t *collationSortedTree[K, V]) All() iter.Seq2[K, V] {
-	return all(t.root, func(l *collateLeafNode[K, V]) K {
-		return K(unsafe.String(l.key, l.len))
-	})
-}
-
-// Backward returns an iterator over the tree in reverse collation order.
-func (t *collationSortedTree[K, V]) Backward() iter.Seq2[K, V] {
-	return backward(t.root, func(l *collateLeafNode[K, V]) K {
-		return K(unsafe.String(l.key, l.len))
-	})
-}
+func (t *collationSortedTree[K, V]) Size() int { return t.size }

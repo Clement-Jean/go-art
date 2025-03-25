@@ -20,6 +20,7 @@ func (n *floatLeafNode[K, V]) getValue() V             { return n.value }
 type floatSortedTree[K floats, V any] struct {
 	root nodeRef
 	bck  FloatBinaryKey[K]
+	size int
 }
 
 func NewFloatBinaryTree[K floats, V any]() Tree[K, V] {
@@ -50,7 +51,12 @@ func (t *floatSortedTree[K, V]) Delete(key K) bool {
 	_, keyStr := t.bck.Transform(key)
 	keyStr = append(keyStr, '\x00')
 
-	return delete[K, V, *floatLeafNode[K, V]](&t.root, keyStr, keyStr)
+	ok := delete[K, V, *floatLeafNode[K, V]](&t.root, keyStr, keyStr)
+
+	if ok {
+		t.size--
+	}
+	return ok
 }
 
 func (t *floatSortedTree[K, V]) Insert(key K, val V) {
@@ -62,7 +68,9 @@ func (t *floatSortedTree[K, V]) Insert(key K, val V) {
 		len:   uint32(len(keyStr)),
 	}
 
-	insert[K](&t.root, keyStr, keyStr, leaf)
+	if insert[K](&t.root, keyStr, keyStr, leaf) {
+		t.size++
+	}
 }
 
 func (t *floatSortedTree[K, V]) Maximum() (K, V, bool) {
@@ -99,3 +107,5 @@ func (t *floatSortedTree[K, V]) Search(key K) (V, bool) {
 
 	return search[K, V, *floatLeafNode[K, V]](t.root, keyStr, keyStr)
 }
+
+func (t *floatSortedTree[K, V]) Size() int { return t.size }
