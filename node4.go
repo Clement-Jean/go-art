@@ -7,7 +7,7 @@ const (
 	hiBitMask   = uint32(0x1010101) * 0x80
 )
 
-func find(keys uint32, b byte) int {
+func searchNode4(keys uint32, b byte) int {
 	bitMask := uint32(0x1010101) * uint32(b)
 	xor1 := keys ^ bitMask
 
@@ -17,7 +17,7 @@ func find(keys uint32, b byte) int {
 	return -1
 }
 
-func lessThan(keys uint32, b byte) int {
+func insertPosNode4(keys uint32, b byte) int {
 	bitMask := uint32(0x1010101) * uint32(b) // broadcast
 	t0 := (((keys | hiBitMask) - (bitMask & ^hiBitMask)) | (keys ^ bitMask)) ^ (keys | ^bitMask)
 	t1 := t0 & hiBitMask

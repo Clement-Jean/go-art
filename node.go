@@ -101,7 +101,7 @@ func (ref *nodeRef) findChild(b byte) *nodeRef {
 	case nodeKind4:
 		n4 := (*node4)(ref.pointer)
 
-		if i := find(n4.keys, b); i != -1 && i < int(n4.childrenLen) {
+		if i := searchNode4(n4.keys, b); i != -1 && i < int(n4.childrenLen) {
 			return &n4.children[i]
 		}
 
@@ -190,7 +190,7 @@ func (n4 *node4) addChild(ref *nodeRef, b byte, child nodeRef) {
 	if n4.childrenLen < maxNode4 {
 		var idx int
 
-		if i := lessThan(n4.keys, b); i != -1 {
+		if i := insertPosNode4(n4.keys, b); i != -1 {
 			idx = i
 			loLimit := idx + 1
 			shiftLeftClear(&n4.keys, idx)
@@ -218,7 +218,7 @@ func (n4 *node4) addChild(ref *nodeRef, b byte, child nodeRef) {
 }
 
 func (n4 *node4) deleteChild(ref *nodeRef, b byte) {
-	if i := find(n4.keys, b); i != -1 {
+	if i := searchNode4(n4.keys, b); i != -1 {
 		shiftRightClear(&n4.keys, i+1)
 		copy(n4.children[i:], n4.children[i+1:])
 		n4.childrenLen--
