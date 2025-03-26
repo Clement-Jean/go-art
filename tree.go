@@ -86,6 +86,7 @@ func insert[K nodeKey, V any, L nodeLeaf[K, V]](root *nodeRef, originalKey, tran
 			nl := (L)(ref.pointer)
 
 			if bytes.Compare(originalKey, nl.getKey()) == 0 {
+				nl.setValue(leaf.getValue())
 				return false
 			}
 
