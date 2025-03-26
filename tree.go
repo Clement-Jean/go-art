@@ -185,7 +185,7 @@ func search[K nodeKey, V any, L nodeLeaf[K, V]](root nodeRef, originalKey, trans
 		if child := n.findChild(transformKey[depth]); child != nil {
 			n = *child
 		} else {
-			n = nodeRef{}
+			break
 		}
 		depth++
 	}

@@ -101,10 +101,8 @@ func (ref *nodeRef) findChild(b byte) *nodeRef {
 	case nodeKind4:
 		n4 := (*node4)(ref.pointer)
 
-		for i := uint8(0); i < n4.childrenLen; i++ {
-			if n4.keys[i] == b {
-				return &n4.children[i]
-			}
+		if i := find(n4.keys, b); i != -1 && i < int(n4.childrenLen) {
+			return &n4.children[i]
 		}
 
 	case nodeKind16:
@@ -185,31 +183,30 @@ func (ptr *nodeRef) deleteChild(b byte) {
 type node4 struct {
 	children [maxNode4]nodeRef
 	node
-	keys [maxNode4]byte
+	keys uint32
 }
 
 func (n4 *node4) addChild(ref *nodeRef, b byte, child nodeRef) {
 	if n4.childrenLen < maxNode4 {
-		var idx uint32
+		var idx int
 
-		for idx = 0; idx < uint32(n4.childrenLen); idx++ {
-			if b < n4.keys[idx] {
-				break
-			}
+		if i := lessThan(n4.keys, b); i != -1 {
+			idx = i
+			loLimit := idx + 1
+			shiftLeftClear(&n4.keys, idx)
+			copy(n4.children[loLimit:], n4.children[idx:])
+		} else {
+			idx = int(n4.childrenLen)
 		}
 
-		loLimit := idx + 1
-		copy(n4.keys[loLimit:], n4.keys[idx:])
-		copy(n4.children[loLimit:], n4.children[idx:])
-
-		n4.keys[idx] = b
+		setAtPos(&n4.keys, idx, b)
 		n4.children[idx] = child
 		n4.childrenLen++
 	} else {
 		n16 := new(node16)
 
-		copy(n16.keys[:n4.childrenLen], n4.keys[:])
-		copy(n16.children[:n4.childrenLen], n4.children[:])
+		copy(n16.keys[:], deconstruct(n4.keys)[:])
+		copy(n16.children[:], n4.children[:])
 
 		n16.childrenLen = n4.childrenLen
 		n16.prefixLen = n4.prefixLen
@@ -221,16 +218,11 @@ func (n4 *node4) addChild(ref *nodeRef, b byte, child nodeRef) {
 }
 
 func (n4 *node4) deleteChild(ref *nodeRef, b byte) {
-	pos := -1
-	for i, key := range n4.keys {
-		if b == key {
-			pos = i
-			break
-		}
+	if i := find(n4.keys, b); i != -1 {
+		shiftRightClear(&n4.keys, i+1)
+		copy(n4.children[i:], n4.children[i+1:])
+		n4.childrenLen--
 	}
-	copy(n4.keys[pos:], n4.keys[pos+1:])
-	copy(n4.children[pos:], n4.children[pos+1:])
-	n4.childrenLen--
 
 	if n4.childrenLen == 1 {
 		child := n4.children[0]
@@ -240,7 +232,7 @@ func (n4 *node4) deleteChild(ref *nodeRef, b byte) {
 			childNode := child.node()
 
 			if prefix < maxPrefixLen {
-				n4.prefix[prefix] = n4.keys[0]
+				n4.prefix[prefix] = getAtPos(n4.keys, 0)
 				prefix++
 			}
 
@@ -314,7 +306,7 @@ func (n16 *node16) deleteChild(ref *nodeRef, b byte) {
 		n4.prefixLen = n16.prefixLen
 		copy(n4.prefix[:], n16.prefix[:])
 
-		copy(n4.keys[:], n16.keys[:])
+		n4.keys = construct(n16.keys[0], n16.keys[1], n16.keys[2], n16.keys[3])
 		copy(n4.children[:], n16.children[:])
 	}
 }
