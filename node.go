@@ -74,7 +74,7 @@ type nodeRef struct {
 }
 
 func (ref *nodeRef) node() *node {
-	switch nodeKind(ref.tag) {
+	switch ref.tag {
 	case nodeKind4:
 		n4 := (*node4)(ref.pointer)
 		return &n4.node
@@ -97,7 +97,7 @@ func (ref *nodeRef) node() *node {
 }
 
 func (ref *nodeRef) findChild(b byte) *nodeRef {
-	switch nodeKind(ref.tag) {
+	switch ref.tag {
 	case nodeKind4:
 		n4 := (*node4)(ref.pointer)
 
@@ -137,7 +137,7 @@ func (ref *nodeRef) findChild(b byte) *nodeRef {
 }
 
 func (ptr *nodeRef) addChild(b byte, child nodeRef) {
-	switch nodeKind(ptr.tag) {
+	switch ptr.tag {
 	case nodeKind4:
 		n4 := (*node4)(ptr.pointer)
 		n4.addChild(ptr, b, child)
@@ -160,7 +160,7 @@ func (ptr *nodeRef) addChild(b byte, child nodeRef) {
 }
 
 func (ptr *nodeRef) deleteChild(b byte) {
-	switch nodeKind(ptr.tag) {
+	switch ptr.tag {
 	case nodeKind4:
 		n4 := (*node4)(ptr.pointer)
 		n4.deleteChild(ptr, b)
