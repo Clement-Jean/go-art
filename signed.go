@@ -46,6 +46,7 @@ func (t *signedSortedTree[K, V]) Delete(key K) bool {
 	}
 
 	_, keyS := t.bck.Transform(key)
+	keyS = append(keyS, '\x00')
 	ok := delete[K, V, *signedLeafNode[K, V]](&t.root, keyS, keyS)
 
 	if ok {

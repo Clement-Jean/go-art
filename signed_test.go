@@ -9,11 +9,11 @@ import (
 
 func TestBinarySignedAll(t *testing.T) {
 	tr := art.NewSignedBinaryTree[int, int]()
-	expected := []int{-1, -9, -100_000, -11}
+	expected := []int{-1, -9, -100_000, 11}
 
 	slices.Sort(expected)
 	tr.Insert(-1, 1)
-	tr.Insert(-11, 1)
+	tr.Insert(11, 1)
 	tr.Insert(-100_000, 1)
 	tr.Insert(-9, 1)
 
@@ -29,12 +29,12 @@ func TestBinarySignedAll(t *testing.T) {
 
 func TestBinarySignedBackward(t *testing.T) {
 	tr := art.NewSignedBinaryTree[int, int]()
-	expected := []int{-1, -9, -100_000, -11}
+	expected := []int{-1, -9, -100_000, 11}
 
 	slices.Sort(expected)
 	slices.Reverse(expected)
 	tr.Insert(-1, 1)
-	tr.Insert(-11, 1)
+	tr.Insert(11, 1)
 	tr.Insert(-100_000, 1)
 	tr.Insert(-9, 1)
 
