@@ -76,7 +76,7 @@ go-art outperforms [plar/go-adaptive-radix-tree](https://github.com/plar/go-adap
 Benchmarks were performed on datasets extracted from different projects:
 - The "Words" dataset contains a list of 235,886 english words. [2]
 - The "UUIDs" dataset contains 100,000 uuids.                   [2]
-- The "HSK Words" dataset contains 4,995 words.                 [4]
+- The "HSK Words" dataset contains 4,995 words.                 [5]
 
 To see more benchmarks just run
 
