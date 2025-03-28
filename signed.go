@@ -26,18 +26,21 @@ func NewSignedBinaryTree[K ints, V any]() Tree[K, V] {
 	return &signedSortedTree[K, V]{}
 }
 
+func (t *signedSortedTree[K, V]) restoreKey(l *signedLeafNode[K, V]) K {
+	keyS := l.getKey()
+	return t.bck.Restore(keyS)
+}
+
 func (t *signedSortedTree[K, V]) All() iter.Seq2[K, V] {
-	return all(t.root, func(l *signedLeafNode[K, V]) K {
-		keyS := l.getKey()
-		return t.bck.Restore(keyS)
-	})
+	return all(t.root, t.restoreKey)
 }
 
 func (t *signedSortedTree[K, V]) Backward() iter.Seq2[K, V] {
-	return backward(t.root, func(l *signedLeafNode[K, V]) K {
-		keyS := l.getKey()
-		return t.bck.Restore(keyS)
-	})
+	return backward(t.root, t.restoreKey)
+}
+
+func (t *signedSortedTree[K, V]) BottomK(k uint) iter.Seq2[K, V] {
+	return bottomK(t, k)
 }
 
 func (t *signedSortedTree[K, V]) Delete(key K) bool {
@@ -57,21 +60,22 @@ func (t *signedSortedTree[K, V]) Delete(key K) bool {
 
 func (t *signedSortedTree[K, V]) Insert(key K, val V) {
 	_, keyS := t.bck.Transform(key)
-	leaf := &signedLeafNode[K, V]{
-		key:   unsafe.SliceData(keyS),
-		value: val,
-		len:   uint32(len(keyS)),
+	createFn := func() *signedLeafNode[K, V] {
+		return &signedLeafNode[K, V]{
+			key:   unsafe.SliceData(keyS),
+			value: val,
+			len:   uint32(len(keyS)),
+		}
 	}
 
-	if insert[K](&t.root, keyS, keyS, leaf) {
+	if insert[K](&t.root, keyS, keyS, val, createFn) {
 		t.size++
 	}
 }
 
 func (t *signedSortedTree[K, V]) Maximum() (K, V, bool) {
 	if l := maximum[K, V, *signedLeafNode[K, V]](t.root); l != nil {
-		keyS := l.getKey()
-		return t.bck.Restore(keyS), l.value, true
+		return t.restoreKey(l), l.value, true
 	}
 
 	var (
@@ -83,8 +87,7 @@ func (t *signedSortedTree[K, V]) Maximum() (K, V, bool) {
 
 func (t *signedSortedTree[K, V]) Minimum() (K, V, bool) {
 	if l := minimum[K, V, *signedLeafNode[K, V]](t.root); l != nil {
-		keyS := l.getKey()
-		return t.bck.Restore(keyS), l.value, true
+		return t.restoreKey(l), l.value, true
 	}
 
 	var (
@@ -94,9 +97,17 @@ func (t *signedSortedTree[K, V]) Minimum() (K, V, bool) {
 	return notFoundKey, notFoundValue, false
 }
 
+func (t *signedSortedTree[K, V]) Prefix(key K) iter.Seq2[K, V] { panic("not implemented") }
+
+func (t *signedSortedTree[K, V]) Range(start, end K) iter.Seq2[K, V] { panic("not implemented") }
+
 func (t *signedSortedTree[K, V]) Search(key K) (V, bool) {
 	_, keyS := t.bck.Transform(key)
 	return search[K, V, *signedLeafNode[K, V]](t.root, keyS, keyS)
+}
+
+func (t *signedSortedTree[K, V]) TopK(k uint) iter.Seq2[K, V] {
+	return topK(t, k)
 }
 
 func (t *signedSortedTree[K, V]) Size() int { return t.size }

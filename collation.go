@@ -1,7 +1,9 @@
 package art
 
 import (
+	"bytes"
 	"iter"
+	"strings"
 	"unsafe"
 
 	"golang.org/x/text/collate"
@@ -47,18 +49,22 @@ func WithCollator[K chars, V any](c *collate.Collator) func(*collationSortedTree
 	}
 }
 
+func (t *collationSortedTree[K, V]) restoreKey(l *collateLeafNode[K, V]) K {
+	return K(string(l.getKey()))
+}
+
 // All returns an iterator over the tree in collation order.
 func (t *collationSortedTree[K, V]) All() iter.Seq2[K, V] {
-	return all(t.root, func(l *collateLeafNode[K, V]) K {
-		return K(string(l.getKey()))
-	})
+	return all(t.root, t.restoreKey)
 }
 
 // Backward returns an iterator over the tree in reverse collation order.
 func (t *collationSortedTree[K, V]) Backward() iter.Seq2[K, V] {
-	return backward(t.root, func(l *collateLeafNode[K, V]) K {
-		return K(string(l.getKey()))
-	})
+	return backward(t.root, t.restoreKey)
+}
+
+func (t *collationSortedTree[K, V]) BottomK(k uint) iter.Seq2[K, V] {
+	return bottomK(t, k)
 }
 
 // Delete deletes a element with the given key.
@@ -89,22 +95,25 @@ func (t *collationSortedTree[K, V]) Insert(key K, val V) {
 	}
 
 	keyS, colKey := bck.Transform(key)
-	leaf := &collateLeafNode[K, V]{
-		colKey:    unsafe.SliceData(colKey),
-		key:       unsafe.SliceData(keyS),
-		value:     val,
-		keyLen:    uint32(len(keyS)),
-		colKeyLen: uint32(len(colKey)),
+
+	createFn := func() *collateLeafNode[K, V] {
+		return &collateLeafNode[K, V]{
+			colKey:    unsafe.SliceData(colKey),
+			key:       unsafe.SliceData(keyS),
+			value:     val,
+			keyLen:    uint32(len(keyS)),
+			colKeyLen: uint32(len(colKey)),
+		}
 	}
 
-	if insert[K](&t.root, keyS, colKey, leaf) {
+	if insert[K](&t.root, keyS, colKey, val, createFn) {
 		t.size++
 	}
 }
 
 func (t *collationSortedTree[K, V]) Maximum() (K, V, bool) {
 	if l := maximum[K, V, *collateLeafNode[K, V]](t.root); l != nil {
-		return K(string(l.getKey())), l.value, true
+		return t.restoreKey(l), l.value, true
 	}
 
 	var (
@@ -116,7 +125,7 @@ func (t *collationSortedTree[K, V]) Maximum() (K, V, bool) {
 
 func (t *collationSortedTree[K, V]) Minimum() (K, V, bool) {
 	if l := minimum[K, V, *collateLeafNode[K, V]](t.root); l != nil {
-		return K(string(l.getKey())), l.value, true
+		return t.restoreKey(l), l.value, true
 	}
 
 	var (
@@ -124,6 +133,49 @@ func (t *collationSortedTree[K, V]) Minimum() (K, V, bool) {
 		notFoundValue V
 	)
 	return notFoundKey, notFoundValue, false
+}
+
+func (t *collationSortedTree[K, V]) Prefix(p K) iter.Seq2[K, V] {
+	if len(p) == 0 {
+		return t.All()
+	}
+
+	bck := CollationOrderKey[K]{
+		buf: t.buf,
+		c:   t.c,
+	}
+	keyS, colKey := bck.Transform(p)
+
+	root := t.root
+	if t.root.pointer != nil {
+		root = lowestCommonParent[K, V, *collateLeafNode[K, V]](root, colKey)
+	}
+
+	hasPrefix := func(k K, v V) bool {
+		leafKeyS := []byte(string(k))
+		return bytes.HasPrefix(leafKeyS, keyS)
+	}
+	return filter(root, hasPrefix, t.restoreKey)
+}
+
+func (t *collationSortedTree[K, V]) Range(start, end K) iter.Seq2[K, V] {
+	if len(end) == 0 {
+		end = K(string(maximum[K, V, *collateLeafNode[K, V]](t.root).getKey()))
+	}
+
+	if strings.Compare(string(start), string(end)) > 0 { // start > end
+		// IDEA: maybe do the iteration in reverse instead?
+		start, end = end, start
+	}
+
+	bck := CollationOrderKey[K]{
+		buf: t.buf,
+		c:   t.c,
+	}
+	startKey, startColKey := bck.Transform(start)
+	endKey, endColKey := bck.Transform(end)
+
+	return rangeScan(t.root, startKey, endKey, startColKey, endColKey, t.restoreKey)
 }
 
 // Search searches for element with the given key.
@@ -136,6 +188,10 @@ func (t *collationSortedTree[K, V]) Search(key K) (V, bool) {
 	keyS, colKey := bck.Transform(key)
 
 	return search[K, V, *collateLeafNode[K, V]](t.root, keyS, colKey)
+}
+
+func (t *collationSortedTree[K, V]) TopK(k uint) iter.Seq2[K, V] {
+	return topK(t, k)
 }
 
 func (t *collationSortedTree[K, V]) Size() int { return t.size }
