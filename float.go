@@ -26,18 +26,21 @@ func NewFloatBinaryTree[K floats, V any]() Tree[K, V] {
 	return &floatSortedTree[K, V]{}
 }
 
+func (t *floatSortedTree[K, V]) restoreKey(l *floatLeafNode[K, V]) K {
+	keyS := l.getKey()
+	return t.bck.Restore(keyS)
+}
+
 func (t *floatSortedTree[K, V]) All() iter.Seq2[K, V] {
-	return all(t.root, func(l *floatLeafNode[K, V]) K {
-		keyS := l.getKey()
-		return t.bck.Restore(keyS)
-	})
+	return all(t.root, t.restoreKey)
 }
 
 func (t *floatSortedTree[K, V]) Backward() iter.Seq2[K, V] {
-	return backward(t.root, func(l *floatLeafNode[K, V]) K {
-		keyS := l.getKey()
-		return t.bck.Restore(keyS)
-	})
+	return backward(t.root, t.restoreKey)
+}
+
+func (t *floatSortedTree[K, V]) BottomK(k uint) iter.Seq2[K, V] {
+	return bottomK(t, k)
 }
 
 func (t *floatSortedTree[K, V]) Delete(key K) bool {
@@ -56,21 +59,22 @@ func (t *floatSortedTree[K, V]) Delete(key K) bool {
 
 func (t *floatSortedTree[K, V]) Insert(key K, val V) {
 	_, keyS := t.bck.Transform(key)
-	leaf := &floatLeafNode[K, V]{
-		key:   unsafe.SliceData(keyS),
-		value: val,
-		len:   uint32(len(keyS)),
+	createFn := func() *floatLeafNode[K, V] {
+		return &floatLeafNode[K, V]{
+			key:   unsafe.SliceData(keyS),
+			value: val,
+			len:   uint32(len(keyS)),
+		}
 	}
 
-	if insert[K](&t.root, keyS, keyS, leaf) {
+	if insert[K](&t.root, keyS, keyS, val, createFn) {
 		t.size++
 	}
 }
 
 func (t *floatSortedTree[K, V]) Maximum() (K, V, bool) {
 	if l := maximum[K, V, *floatLeafNode[K, V]](t.root); l != nil {
-		keyS := l.getKey()
-		return t.bck.Restore(keyS), l.value, true
+		return t.restoreKey(l), l.value, true
 	}
 
 	var (
@@ -82,8 +86,7 @@ func (t *floatSortedTree[K, V]) Maximum() (K, V, bool) {
 
 func (t *floatSortedTree[K, V]) Minimum() (K, V, bool) {
 	if l := minimum[K, V, *floatLeafNode[K, V]](t.root); l != nil {
-		keyS := l.getKey()
-		return t.bck.Restore(keyS), l.value, true
+		return t.restoreKey(l), l.value, true
 	}
 
 	var (
@@ -93,9 +96,17 @@ func (t *floatSortedTree[K, V]) Minimum() (K, V, bool) {
 	return notFoundKey, notFoundValue, false
 }
 
+func (t *floatSortedTree[K, V]) Prefix(key K) iter.Seq2[K, V] { panic("not implemented") }
+
+func (t *floatSortedTree[K, V]) Range(start, end K) iter.Seq2[K, V] { panic("not implemented") }
+
 func (t *floatSortedTree[K, V]) Search(key K) (V, bool) {
 	_, keyS := t.bck.Transform(key)
 	return search[K, V, *floatLeafNode[K, V]](t.root, keyS, keyS)
+}
+
+func (t *floatSortedTree[K, V]) TopK(k uint) iter.Seq2[K, V] {
+	return topK(t, k)
 }
 
 func (t *floatSortedTree[K, V]) Size() int { return t.size }
