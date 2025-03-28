@@ -91,7 +91,7 @@ func insert[K nodeKey, V any, L nodeLeaf[K, V]](root *nodeRef, originalKey, tran
 			}
 
 			leafKey := nl.getTransformKey()
-			newNode := new(node4)
+			newNode := nodePools[nodeKind4].Get().(*node4)
 
 			longestPrefix := longestCommonPrefix(leafKey, transformKey, depth)
 			newNode.prefixLen = uint32(longestPrefix)
@@ -115,7 +115,7 @@ func insert[K nodeKey, V any, L nodeLeaf[K, V]](root *nodeRef, originalKey, tran
 				goto CONTINUE_SEARCH
 			}
 
-			newNode := new(node4)
+			newNode := nodePools[nodeKind4].Get().(*node4)
 
 			*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
 
