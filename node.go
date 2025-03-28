@@ -26,6 +26,7 @@ const (
 	nodeKind16                        // NODE_16
 	nodeKind48                        // NODE_48
 	nodeKind256                       // NODE_256
+	nodeKindMax
 )
 
 type node struct {
@@ -186,6 +187,12 @@ type node4 struct {
 	keys uint32
 }
 
+func (n4 *node4) clear() {
+	clear(n4.children[:])
+	n4.node = node{}
+	n4.keys = 0
+}
+
 func (n4 *node4) addChild(ref *nodeRef, b byte, child nodeRef) {
 	if n4.childrenLen < maxNode4 {
 		var idx int
@@ -203,7 +210,7 @@ func (n4 *node4) addChild(ref *nodeRef, b byte, child nodeRef) {
 		n4.children[idx] = child
 		n4.childrenLen++
 	} else {
-		n16 := new(node16)
+		n16 := nodePools[nodeKind16].Get().(*node16)
 
 		copy(n16.keys[:], deconstruct(n4.keys)[:])
 		copy(n16.children[:], n4.children[:])
@@ -214,6 +221,9 @@ func (n4 *node4) addChild(ref *nodeRef, b byte, child nodeRef) {
 
 		*ref = nodeRef{pointer: unsafe.Pointer(n16), tag: nodeKind16}
 		n16.addChild(ref, b, child)
+
+		n4.clear()
+		nodePools[nodeKind4].Put(n4)
 	}
 }
 
@@ -247,6 +257,9 @@ func (n4 *node4) deleteChild(ref *nodeRef, b byte) {
 			childNode.prefixLen += n4.prefixLen + 1
 		}
 		*ref = child
+
+		n4.clear()
+		nodePools[nodeKind4].Put(n4)
 	}
 }
 
@@ -254,6 +267,12 @@ type node16 struct {
 	children [maxNode16]nodeRef
 	node
 	keys [maxNode16]byte
+}
+
+func (n16 *node16) clear() {
+	clear(n16.children[:])
+	n16.node = node{}
+	clear(n16.keys[:])
 }
 
 func (n16 *node16) addChild(ref *nodeRef, b byte, child nodeRef) {
@@ -272,7 +291,7 @@ func (n16 *node16) addChild(ref *nodeRef, b byte, child nodeRef) {
 		n16.children[idx] = child
 		n16.childrenLen++
 	} else {
-		n48 := new(node48)
+		n48 := nodePools[nodeKind48].Get().(*node48)
 
 		copy(n48.children[:n16.childrenLen], n16.children[:])
 		for i := uint8(0); i < n16.childrenLen; i++ {
@@ -285,6 +304,9 @@ func (n16 *node16) addChild(ref *nodeRef, b byte, child nodeRef) {
 
 		*ref = nodeRef{pointer: unsafe.Pointer(n48), tag: nodeKind48}
 		n48.addChild(ref, b, child)
+
+		n16.clear()
+		nodePools[nodeKind16].Put(n16)
 	}
 }
 
@@ -296,7 +318,7 @@ func (n16 *node16) deleteChild(ref *nodeRef, b byte) {
 	n16.childrenLen--
 
 	if n16.childrenLen == 3 {
-		n4 := new(node4)
+		n4 := nodePools[nodeKind4].Get().(*node4)
 		*ref = nodeRef{
 			pointer: unsafe.Pointer(n4),
 			tag:     nodeKind4,
@@ -308,6 +330,9 @@ func (n16 *node16) deleteChild(ref *nodeRef, b byte) {
 
 		n4.keys = construct(n16.keys[0], n16.keys[1], n16.keys[2], n16.keys[3])
 		copy(n4.children[:], n16.children[:])
+
+		n16.clear()
+		nodePools[nodeKind16].Put(n16)
 	}
 }
 
@@ -315,6 +340,12 @@ type node48 struct {
 	children [maxNode48]nodeRef
 	node
 	keys [256]byte
+}
+
+func (n48 *node48) clear() {
+	clear(n48.children[:])
+	n48.node = node{}
+	clear(n48.keys[:])
 }
 
 func (n48 *node48) addChild(ref *nodeRef, b byte, child nodeRef) {
@@ -328,7 +359,7 @@ func (n48 *node48) addChild(ref *nodeRef, b byte, child nodeRef) {
 		n48.keys[b] = pos + 1
 		n48.childrenLen++
 	} else {
-		n256 := new(node256)
+		n256 := nodePools[nodeKind256].Get().(*node256)
 
 		for i := 0; i < maxNode256; i++ {
 			if n48.keys[i] != 0 {
@@ -342,6 +373,9 @@ func (n48 *node48) addChild(ref *nodeRef, b byte, child nodeRef) {
 
 		*ref = nodeRef{pointer: unsafe.Pointer(n256), tag: nodeKind256}
 		n256.addChild(b, child)
+
+		n48.clear()
+		nodePools[nodeKind48].Put(n48)
 	}
 }
 
@@ -352,7 +386,7 @@ func (n48 *node48) deleteChild(ref *nodeRef, b byte) {
 	n48.childrenLen--
 
 	if n48.childrenLen == 12 {
-		n16 := new(node16)
+		n16 := nodePools[nodeKind16].Get().(*node16)
 		*ref = nodeRef{
 			pointer: unsafe.Pointer(n16),
 			tag:     nodeKind16,
@@ -371,12 +405,20 @@ func (n48 *node48) deleteChild(ref *nodeRef, b byte) {
 				children++
 			}
 		}
+
+		n48.clear()
+		nodePools[nodeKind48].Put(n48)
 	}
 }
 
 type node256 struct {
 	children [maxNode256]nodeRef
 	node
+}
+
+func (n256 *node256) clear() {
+	clear(n256.children[:])
+	n256.node = node{}
 }
 
 func (n256 *node256) addChild(b byte, child nodeRef) {
@@ -389,7 +431,7 @@ func (n256 *node256) deleteChild(ref *nodeRef, b byte) {
 	n256.childrenLen--
 
 	if n256.childrenLen == 37 {
-		n48 := new(node48)
+		n48 := nodePools[nodeKind48].Get().(*node48)
 		*ref = nodeRef{
 			pointer: unsafe.Pointer(n48),
 			tag:     nodeKind48,
@@ -407,5 +449,8 @@ func (n256 *node256) deleteChild(ref *nodeRef, b byte) {
 				pos++
 			}
 		}
+
+		n256.clear()
+		nodePools[nodeKind256].Put(n256)
 	}
 }
