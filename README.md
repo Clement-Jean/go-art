@@ -71,7 +71,7 @@ But there are more uses cases in the examples folder.
 
 # Performance
 
-go-art outperforms [plar/go-adaptive-radix-tree](https://github.com/plar/go-adaptive-radix-tree) and [kellydunn/go-art](https://github.com/kellydunn/go-art) by taking advantage of SIMD, SWAR and shaving of allocations.
+go-art outperforms [plar/go-adaptive-radix-tree](https://github.com/plar/go-adaptive-radix-tree) and [kellydunn/go-art](https://github.com/kellydunn/go-art) by taking advantage of SIMD, SWAR and shaving off allocations.
 
 Benchmarks were performed on datasets extracted from different projects:
 - The "Words" dataset contains a list of 235,886 english words. [2]
