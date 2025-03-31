@@ -7,6 +7,8 @@ const (
 	hiBitMask   = uint32(0x1010101) * 0x80
 )
 
+// searchNode4 tries to find b in keys
+// see: http://0x80.pl/notesen/2023-03-06-swar-find-any.html
 func searchNode4(keys uint32, b byte) int {
 	bitMask := uint32(0x1010101) * uint32(b)
 	xor1 := keys ^ bitMask
@@ -17,6 +19,8 @@ func searchNode4(keys uint32, b byte) int {
 	return -1
 }
 
+// insertPosNode4 tries to find an element in keys which is smaller than b
+// see: https://stackoverflow.com/a/68717720/11269045
 func insertPosNode4(keys uint32, b byte) int {
 	bitMask := uint32(0x1010101) * uint32(b) // broadcast
 	t0 := (((keys | hiBitMask) - (bitMask & ^hiBitMask)) | (keys ^ bitMask)) ^ (keys | ^bitMask)
@@ -40,6 +44,11 @@ func setAtPos(keys *uint32, pos int, b byte) {
 	*keys |= (uint32(b) << bitPos) // set
 }
 
+// shiftLeftClear moves the elements in keys by 1 to the left at pos
+//
+// e.g.
+// shiftLeftClear(0b00000000_00000000_11111111_11111111, 1)
+// -> 0b00000000_11111111_00000000_11111111
 func shiftLeftClear(keys *uint32, pos int) {
 	bitPos := pos << 3
 	mask := uint32(0xFFFFFFFF) << bitPos
@@ -49,12 +58,15 @@ func shiftLeftClear(keys *uint32, pos int) {
 	*keys |= backup        // set
 }
 
+// shiftRightClear moves the elements in keys by 1 to the right at pos
+//
+// shiftRightClear(0b00000000_00000000_11111111_11111111, 1)
+// -> 0b00000000_00000000_00000000_11111111
 func shiftRightClear(keys *uint32, pos int) {
 	bitPos := pos << 3
 	mask := uint32(0xFFFFFFFF) << bitPos
-	mask2 := uint32(0xFFFFFFFF) << (bitPos - 8)
 	backup := *keys & mask // snapshot
-	*keys &= ^mask2        // clear
+	*keys &= ^(mask >> 8)  // clear
 	backup >>= 8           // shift
 	*keys |= backup        // set
 }
