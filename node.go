@@ -73,26 +73,7 @@ type nodeRef struct {
 }
 
 func (ref *nodeRef) node() *node {
-	switch ref.tag {
-	case nodeKind4:
-		n4 := (*node4)(ref.pointer)
-		return &n4.node
-
-	case nodeKind16:
-		n16 := (*node16)(ref.pointer)
-		return &n16.node
-
-	case nodeKind48:
-		n48 := (*node48)(ref.pointer)
-		return &n48.node
-
-	case nodeKind256:
-		n256 := (*node256)(ref.pointer)
-		return &n256.node
-
-	default:
-		panic("shouldn't be possible!")
-	}
+	return (*node)(ref.pointer)
 }
 
 func (ref *nodeRef) findChild(b byte) *nodeRef {
@@ -180,9 +161,9 @@ func (ptr *nodeRef) deleteChild(b byte) {
 }
 
 type node4 struct {
-	children [maxNode4]nodeRef
 	node
-	keys uint32
+	children [maxNode4]nodeRef
+	keys     uint32
 }
 
 func (n4 *node4) clear() {
@@ -262,9 +243,9 @@ func (n4 *node4) deleteChild(ref *nodeRef, b byte) {
 }
 
 type node16 struct {
-	children [maxNode16]nodeRef
 	node
-	keys [maxNode16]byte
+	children [maxNode16]nodeRef
+	keys     [maxNode16]byte
 }
 
 func (n16 *node16) clear() {
@@ -335,9 +316,9 @@ func (n16 *node16) deleteChild(ref *nodeRef, b byte) {
 }
 
 type node48 struct {
-	children [maxNode48]nodeRef
 	node
-	keys [256]byte
+	children [maxNode48]nodeRef
+	keys     [256]byte
 }
 
 func (n48 *node48) clear() {
@@ -410,8 +391,8 @@ func (n48 *node48) deleteChild(ref *nodeRef, b byte) {
 }
 
 type node256 struct {
-	children [maxNode256]nodeRef
 	node
+	children [maxNode256]nodeRef
 }
 
 func (n256 *node256) clear() {
