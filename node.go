@@ -20,13 +20,11 @@ const (
 type nodeKind uint8
 
 const (
-	nodeKindUndefined nodeKind = iota // UNDEFINED
-	nodeKindLeaf                      // NODE_LEAF
-	nodeKind4                         // NODE_4
-	nodeKind16                        // NODE_16
-	nodeKind48                        // NODE_48
-	nodeKind256                       // NODE_256
-	nodeKindMax
+	nodeKind4    nodeKind = iota // NODE_4
+	nodeKind16                   // NODE_16
+	nodeKind48                   // NODE_48
+	nodeKind256                  // NODE_256
+	nodeKindLeaf                 // NODE_LEAF
 )
 
 type node struct {
