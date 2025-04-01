@@ -1,17 +1,11 @@
 package art
 
-import (
-	"unsafe"
-)
+import "unsafe"
 
 const (
-	minNode4     = uint8(2)
 	maxNode4     = uint8(4)
-	minNode16    = maxNode4 + 1
 	maxNode16    = uint8(16)
-	minNode48    = maxNode16 + 1
 	maxNode48    = uint8(48)
-	minNode256   = maxNode48 + 1
 	maxNode256   = 256
 	maxPrefixLen = 10
 )
