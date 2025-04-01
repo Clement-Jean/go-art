@@ -26,9 +26,10 @@ func NewFloatBinaryTree[K floats, V any]() Tree[K, V] {
 	return &floatSortedTree[K, V]{}
 }
 
-func (t *floatSortedTree[K, V]) restoreKey(l *floatLeafNode[K, V]) K {
+func (t *floatSortedTree[K, V]) restoreKey(ptr unsafe.Pointer) (K, V) {
+	l := (*floatLeafNode[K, V])(ptr)
 	keyS := l.getKey()
-	return t.bck.Restore(keyS)
+	return t.bck.Restore(keyS), l.value
 }
 
 func (t *floatSortedTree[K, V]) All() iter.Seq2[K, V] {
@@ -59,22 +60,23 @@ func (t *floatSortedTree[K, V]) Delete(key K) bool {
 
 func (t *floatSortedTree[K, V]) Insert(key K, val V) {
 	_, keyS := t.bck.Transform(key)
-	createFn := func() *floatLeafNode[K, V] {
-		return &floatLeafNode[K, V]{
+	createFn := func() unsafe.Pointer {
+		return unsafe.Pointer(&floatLeafNode[K, V]{
 			key:   unsafe.SliceData(keyS),
 			value: val,
 			len:   uint32(len(keyS)),
-		}
+		})
 	}
 
-	if insert[K](&t.root, keyS, keyS, val, createFn) {
+	if insert[K, V, *floatLeafNode[K, V]](&t.root, keyS, keyS, val, createFn) {
 		t.size++
 	}
 }
 
 func (t *floatSortedTree[K, V]) Maximum() (K, V, bool) {
-	if l := maximum[K, V, *floatLeafNode[K, V]](t.root); l != nil {
-		return t.restoreKey(l), l.value, true
+	if l := maximum[K, V](t.root); l != nil {
+		k, v := t.restoreKey(l)
+		return k, v, true
 	}
 
 	var (
@@ -85,8 +87,9 @@ func (t *floatSortedTree[K, V]) Maximum() (K, V, bool) {
 }
 
 func (t *floatSortedTree[K, V]) Minimum() (K, V, bool) {
-	if l := minimum[K, V, *floatLeafNode[K, V]](t.root); l != nil {
-		return t.restoreKey(l), l.value, true
+	if l := minimum[K, V](t.root); l != nil {
+		k, v := t.restoreKey(l)
+		return k, v, true
 	}
 
 	var (

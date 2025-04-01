@@ -196,7 +196,7 @@ func (n4 *node4) addChild(ref *nodeRef, b byte, child nodeRef) {
 
 		n16.childrenLen = n4.childrenLen
 		n16.prefixLen = n4.prefixLen
-		copy(n16.prefix[:], n4.prefix[:])
+		n16.prefix = n4.prefix
 
 		*ref = nodeRef{pointer: unsafe.Pointer(n16), tag: nodeKind16}
 		n16.addChild(ref, b, child)
@@ -279,7 +279,7 @@ func (n16 *node16) addChild(ref *nodeRef, b byte, child nodeRef) {
 
 		n48.childrenLen = n16.childrenLen
 		n48.prefixLen = n16.prefixLen
-		copy(n48.prefix[:], n16.prefix[:])
+		n48.prefix = n16.prefix
 
 		*ref = nodeRef{pointer: unsafe.Pointer(n48), tag: nodeKind48}
 		n48.addChild(ref, b, child)
@@ -305,7 +305,7 @@ func (n16 *node16) deleteChild(ref *nodeRef, b byte) {
 
 		n4.childrenLen = n16.childrenLen
 		n4.prefixLen = n16.prefixLen
-		copy(n4.prefix[:], n16.prefix[:])
+		n4.prefix = n16.prefix
 
 		n4.keys = construct(n16.keys[0], n16.keys[1], n16.keys[2], n16.keys[3])
 		copy(n4.children[:], n16.children[:])
@@ -348,7 +348,7 @@ func (n48 *node48) addChild(ref *nodeRef, b byte, child nodeRef) {
 
 		n256.childrenLen = n48.childrenLen
 		n256.prefixLen = n48.prefixLen
-		copy(n256.prefix[:], n48.prefix[:])
+		n256.prefix = n48.prefix
 
 		*ref = nodeRef{pointer: unsafe.Pointer(n256), tag: nodeKind256}
 		n256.addChild(b, child)
@@ -373,7 +373,7 @@ func (n48 *node48) deleteChild(ref *nodeRef, b byte) {
 
 		n16.childrenLen = n48.childrenLen
 		n16.prefixLen = n48.prefixLen
-		copy(n16.prefix[:], n48.prefix[:])
+		n16.prefix = n48.prefix
 
 		children := 0
 		for i := 0; i < 256; i++ {
@@ -418,7 +418,7 @@ func (n256 *node256) deleteChild(ref *nodeRef, b byte) {
 
 		n48.childrenLen = n256.childrenLen
 		n48.prefixLen = n256.prefixLen
-		copy(n48.prefix[:], n256.prefix[:])
+		n48.prefix = n256.prefix
 
 		pos := 0
 		for i := 0; i < 256; i++ {

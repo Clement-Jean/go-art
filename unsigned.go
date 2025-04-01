@@ -26,9 +26,10 @@ func NewUnsignedBinaryTree[K uints, V any]() Tree[K, V] {
 	return &unsignedSortedTree[K, V]{}
 }
 
-func (t *unsignedSortedTree[K, V]) restoreKey(l *unsignedLeafNode[K, V]) K {
+func (t *unsignedSortedTree[K, V]) restoreKey(ptr unsafe.Pointer) (K, V) {
+	l := (*unsignedLeafNode[K, V])(ptr)
 	keyS := l.getKey()
-	return t.bck.Restore(keyS)
+	return t.bck.Restore(keyS), l.value
 }
 
 func (t *unsignedSortedTree[K, V]) All() iter.Seq2[K, V] {
@@ -59,22 +60,23 @@ func (t *unsignedSortedTree[K, V]) Delete(key K) bool {
 
 func (t *unsignedSortedTree[K, V]) Insert(key K, val V) {
 	_, keyS := t.bck.Transform(key)
-	createFn := func() *unsignedLeafNode[K, V] {
-		return &unsignedLeafNode[K, V]{
+	createFn := func() unsafe.Pointer {
+		return unsafe.Pointer(&unsignedLeafNode[K, V]{
 			key:   unsafe.SliceData(keyS),
 			value: val,
 			len:   uint32(len(keyS)),
-		}
+		})
 	}
 
-	if insert[K](&t.root, keyS, keyS, val, createFn) {
+	if insert[K, V, *unsignedLeafNode[K, V]](&t.root, keyS, keyS, val, createFn) {
 		t.size++
 	}
 }
 
 func (t *unsignedSortedTree[K, V]) Maximum() (K, V, bool) {
-	if l := maximum[K, V, *unsignedLeafNode[K, V]](t.root); l != nil {
-		return t.restoreKey(l), l.value, true
+	if l := maximum[K, V](t.root); l != nil {
+		k, v := t.restoreKey(l)
+		return k, v, true
 	}
 
 	var (
@@ -85,8 +87,9 @@ func (t *unsignedSortedTree[K, V]) Maximum() (K, V, bool) {
 }
 
 func (t *unsignedSortedTree[K, V]) Minimum() (K, V, bool) {
-	if l := minimum[K, V, *unsignedLeafNode[K, V]](t.root); l != nil {
-		return t.restoreKey(l), l.value, true
+	if l := minimum[K, V](t.root); l != nil {
+		k, v := t.restoreKey(l)
+		return k, v, true
 	}
 
 	var (

@@ -49,8 +49,9 @@ func WithCollator[K chars, V any](c *collate.Collator) func(*collationSortedTree
 	}
 }
 
-func (t *collationSortedTree[K, V]) restoreKey(l *collateLeafNode[K, V]) K {
-	return K(string(l.getKey()))
+func (t *collationSortedTree[K, V]) restoreKey(ptr unsafe.Pointer) (K, V) {
+	l := (*collateLeafNode[K, V])(ptr)
+	return K(string(l.getKey())), l.value
 }
 
 // All returns an iterator over the tree in collation order.
@@ -96,24 +97,25 @@ func (t *collationSortedTree[K, V]) Insert(key K, val V) {
 
 	keyS, colKey := bck.Transform(key)
 
-	createFn := func() *collateLeafNode[K, V] {
-		return &collateLeafNode[K, V]{
+	createFn := func() unsafe.Pointer {
+		return unsafe.Pointer(&collateLeafNode[K, V]{
 			colKey:    unsafe.SliceData(colKey),
 			key:       unsafe.SliceData(keyS),
 			value:     val,
 			keyLen:    uint32(len(keyS)),
 			colKeyLen: uint32(len(colKey)),
-		}
+		})
 	}
 
-	if insert[K](&t.root, keyS, colKey, val, createFn) {
+	if insert[K, V, *collateLeafNode[K, V]](&t.root, keyS, colKey, val, createFn) {
 		t.size++
 	}
 }
 
 func (t *collationSortedTree[K, V]) Maximum() (K, V, bool) {
-	if l := maximum[K, V, *collateLeafNode[K, V]](t.root); l != nil {
-		return t.restoreKey(l), l.value, true
+	if l := maximum[K, V](t.root); l != nil {
+		k, v := t.restoreKey(l)
+		return k, v, true
 	}
 
 	var (
@@ -124,8 +126,9 @@ func (t *collationSortedTree[K, V]) Maximum() (K, V, bool) {
 }
 
 func (t *collationSortedTree[K, V]) Minimum() (K, V, bool) {
-	if l := minimum[K, V, *collateLeafNode[K, V]](t.root); l != nil {
-		return t.restoreKey(l), l.value, true
+	if l := minimum[K, V](t.root); l != nil {
+		k, v := t.restoreKey(l)
+		return k, v, true
 	}
 
 	var (
@@ -160,7 +163,7 @@ func (t *collationSortedTree[K, V]) Prefix(p K) iter.Seq2[K, V] {
 
 func (t *collationSortedTree[K, V]) Range(start, end K) iter.Seq2[K, V] {
 	if len(end) == 0 {
-		end = K(string(maximum[K, V, *collateLeafNode[K, V]](t.root).getKey()))
+		end, _ = t.restoreKey(maximum[K, V](t.root))
 	}
 
 	if strings.Compare(string(start), string(end)) > 0 { // start > end
@@ -175,7 +178,7 @@ func (t *collationSortedTree[K, V]) Range(start, end K) iter.Seq2[K, V] {
 	startKey, startColKey := bck.Transform(start)
 	endKey, endColKey := bck.Transform(end)
 
-	return rangeScan(t.root, startKey, endKey, startColKey, endColKey, t.restoreKey)
+	return rangeScan[K, V, *collateLeafNode[K, V]](t.root, startKey, endKey, startColKey, endColKey, t.restoreKey)
 }
 
 // Search searches for element with the given key.

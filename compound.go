@@ -28,9 +28,10 @@ func NewCompoundTree[K any, V any](bck BinaryComparableKey[K]) Tree[K, V] {
 	}
 }
 
-func (t *compoundSortedTree[K, V]) restoreKey(l *compoundLeafNode[K, V]) K {
+func (t *compoundSortedTree[K, V]) restoreKey(ptr unsafe.Pointer) (K, V) {
+	l := (*compoundLeafNode[K, V])(ptr)
 	keyS := l.getKey()[:l.len-1]
-	return t.bck.Restore(keyS)
+	return t.bck.Restore(keyS), l.value
 }
 
 func (t *compoundSortedTree[K, V]) All() iter.Seq2[K, V] {
@@ -64,22 +65,23 @@ func (t *compoundSortedTree[K, V]) Delete(key K) bool {
 func (t *compoundSortedTree[K, V]) Insert(key K, val V) {
 	_, keyS := t.bck.Transform(key)
 	keyS = append(keyS, '\x00')
-	createFn := func() *compoundLeafNode[K, V] {
-		return &compoundLeafNode[K, V]{
+	createFn := func() unsafe.Pointer {
+		return unsafe.Pointer(&compoundLeafNode[K, V]{
 			key:   unsafe.SliceData(keyS),
 			value: val,
 			len:   uint32(len(keyS)),
-		}
+		})
 	}
 
-	if insert[K](&t.root, keyS, keyS, val, createFn) {
+	if insert[K, V, *compoundLeafNode[K, V]](&t.root, keyS, keyS, val, createFn) {
 		t.size++
 	}
 }
 
 func (t *compoundSortedTree[K, V]) Maximum() (K, V, bool) {
-	if l := maximum[K, V, *compoundLeafNode[K, V]](t.root); l != nil {
-		return t.restoreKey(l), l.value, true
+	if l := maximum[K, V](t.root); l != nil {
+		k, v := t.restoreKey(l)
+		return k, v, true
 	}
 
 	var (
@@ -90,8 +92,9 @@ func (t *compoundSortedTree[K, V]) Maximum() (K, V, bool) {
 }
 
 func (t *compoundSortedTree[K, V]) Minimum() (K, V, bool) {
-	if l := minimum[K, V, *compoundLeafNode[K, V]](t.root); l != nil {
-		return t.restoreKey(l), l.value, true
+	if l := minimum[K, V](t.root); l != nil {
+		k, v := t.restoreKey(l)
+		return k, v, true
 	}
 
 	var (

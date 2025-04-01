@@ -12,8 +12,9 @@ const (
 func searchNode4(keys uint32, b byte) int {
 	bitMask := uint32(0x1010101) * uint32(b)
 	xor1 := keys ^ bitMask
+	isMatch := ((xor1 - 0x1010101) & ^(xor1) & 0x80808080)
 
-	if isMatch := ((xor1 - 0x1010101) & ^(xor1) & 0x80808080); isMatch != 0 {
+	if isMatch != 0 {
 		return int((((isMatch - 1) & 0x1010101) * 0x1010101 >> 24) - 1)
 	}
 	return -1
