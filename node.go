@@ -53,18 +53,18 @@ type nodeKey interface {
 	chars | uints | ints | floats | any
 }
 
-type nodeLeaf[K nodeKey, V any] interface {
+type nodeLeaf[V any] interface {
 	getKey() []byte
 	getTransformKey() []byte
 	getValue() V
 	setValue(V)
 
-	*alphaLeafNode[K, V] |
-		*collateLeafNode[K, V] |
-		*unsignedLeafNode[K, V] |
-		*signedLeafNode[K, V] |
-		*floatLeafNode[K, V] |
-		*compoundLeafNode[K, V]
+	*alphaLeafNode[V] |
+		*collateLeafNode[V] |
+		*unsignedLeafNode[V] |
+		*signedLeafNode[V] |
+		*floatLeafNode[V] |
+		*compoundLeafNode[V]
 }
 
 type nodeRef struct {
