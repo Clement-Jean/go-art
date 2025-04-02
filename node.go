@@ -183,7 +183,7 @@ func (n4 *node4) addChild(ref *nodeRef, b byte, child nodeRef) {
 	} else {
 		n16 := nodePools[nodeKind16].Get().(*node16)
 
-		copy(n16.keys[:], deconstruct(n4.keys)[:])
+		copy(n16.keys[:], deconstruct(n4.keys))
 		copy(n16.children[:], n4.children[:])
 
 		n16.childrenLen = n4.childrenLen
