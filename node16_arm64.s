@@ -15,7 +15,8 @@ TEXT ·insertPosNode16(SB),$0-24
 	WORD	$0x6e213400 // cmhi.16b	v0, v0, v1
 
 	WORD	$0x0f0c8400 // shrn.8b	v0, v0, #0x4
-	VMOV 	vBitfield.D[0], rIdx
+	FMOVD	F0, rIdx
+	//VMOV 	vBitfield.D[0], rIdx
 
 	CBNZ	rIdx, found
 	MOVD 	$-1, rIdx
@@ -43,7 +44,8 @@ TEXT ·searchNode16(SB),$0-24
 	VCMEQ	vBitfield.B16, vMask.B16, vBitfield.B16
 
 	WORD	$0x0f0c8400 // shrn.8b	v0, v0, #0x4
-	VMOV 	vBitfield.D[0], rIdx
+	FMOVD	F0, rIdx
+	//VMOV 	vBitfield.D[0], rIdx
 
 	CBNZ	rIdx, found
 	MOVD 	$-1, rIdx
