@@ -81,7 +81,7 @@ Benchmarks were performed on datasets extracted from different projects:
 To see more benchmarks just run
 
 ```
-$ go test -run=^$ -bench=. -benchmem -count=10
+$ cd bench && go test -run=^$ -bench=. -benchmem -count=10
 ```
 
 # References
