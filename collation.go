@@ -20,20 +20,19 @@ type collateLeafNode[V any] struct {
 
 func (n *collateLeafNode[V]) getKey() []byte          { return unsafe.Slice(n.key, n.keyLen) }
 func (n *collateLeafNode[V]) getTransformKey() []byte { return unsafe.Slice(n.colKey, n.colKeyLen) }
-func (n *collateLeafNode[V]) getValue() V             { return n.value }
-func (n *collateLeafNode[V]) setValue(val V)          { n.value = val }
 
 type collationSortedTree[K chars | []rune, V any] struct {
-	buf  *collate.Buffer
-	c    *collate.Collator
+	cok  CollationOrderKey[K]
 	root nodeRef
 	size int
 }
 
 func NewCollationSortedTree[K chars | []rune, V any](opts ...func(*collationSortedTree[K, V])) Tree[K, V] {
 	t := &collationSortedTree[K, V]{
-		c:   collate.New(language.Und),
-		buf: &collate.Buffer{},
+		cok: CollationOrderKey[K]{
+			c:   collate.New(language.Und),
+			buf: &collate.Buffer{},
+		},
 	}
 
 	for _, opt := range opts {
@@ -45,7 +44,7 @@ func NewCollationSortedTree[K chars | []rune, V any](opts ...func(*collationSort
 
 func WithCollator[K chars, V any](c *collate.Collator) func(*collationSortedTree[K, V]) {
 	return func(t *collationSortedTree[K, V]) {
-		t.c = c
+		t.cok.c = c
 	}
 }
 
@@ -74,11 +73,7 @@ func (t *collationSortedTree[K, V]) Delete(key K) bool {
 		return false
 	}
 
-	bck := CollationOrderKey[K]{
-		buf: t.buf,
-		c:   t.c,
-	}
-	keyS, colKey := bck.Transform(key)
+	keyS, colKey := t.cok.Transform(key)
 
 	ref := &t.root
 	n := *ref
@@ -88,7 +83,7 @@ func (t *collationSortedTree[K, V]) Delete(key K) bool {
 		if n.tag == nodeKindLeaf {
 			leaf := (*collateLeafNode[V])(n.pointer)
 
-			if bytes.Compare(leaf.getKey(), keyS) == 0 {
+			if bytes.Equal(leaf.getKey(), keyS) {
 				*ref = nodeRef{}
 				t.size--
 				return true
@@ -115,7 +110,7 @@ func (t *collationSortedTree[K, V]) Delete(key K) bool {
 		if child.tag == nodeKindLeaf {
 			leaf := (*collateLeafNode[V])(child.pointer)
 
-			if bytes.Compare(leaf.getKey(), keyS) == 0 {
+			if bytes.Equal(leaf.getKey(), keyS) {
 				ref.deleteChild(colKey[depth])
 				t.size--
 				return true
@@ -133,12 +128,7 @@ func (t *collationSortedTree[K, V]) Delete(key K) bool {
 
 // Insert inserts a key-value pair in the tree.
 func (t *collationSortedTree[K, V]) Insert(key K, val V) {
-	bck := CollationOrderKey[K]{
-		buf: t.buf,
-		c:   t.c,
-	}
-
-	keyS, colKey := bck.Transform(key)
+	keyS, colKey := t.cok.Transform(key)
 
 	createLeaf := func() unsafe.Pointer {
 		return unsafe.Pointer(&collateLeafNode[V]{
@@ -164,8 +154,8 @@ func (t *collationSortedTree[K, V]) Insert(key K, val V) {
 		if ref.tag == nodeKindLeaf {
 			nl := (*collateLeafNode[V])(ref.pointer)
 
-			if bytes.Compare(keyS, nl.getKey()) == 0 {
-				nl.setValue(val)
+			if bytes.Equal(keyS, nl.getKey()) {
+				nl.value = val
 				return
 			}
 
@@ -283,11 +273,7 @@ func (t *collationSortedTree[K, V]) Prefix(p K) iter.Seq2[K, V] {
 		return t.All()
 	}
 
-	bck := CollationOrderKey[K]{
-		buf: t.buf,
-		c:   t.c,
-	}
-	keyS, colKey := bck.Transform(p)
+	keyS, colKey := t.cok.Transform(p)
 
 	root := t.root
 	if t.root.pointer != nil {
@@ -311,12 +297,8 @@ func (t *collationSortedTree[K, V]) Range(start, end K) iter.Seq2[K, V] {
 		start, end = end, start
 	}
 
-	bck := CollationOrderKey[K]{
-		buf: t.buf,
-		c:   t.c,
-	}
-	startKey, startColKey := bck.Transform(start)
-	endKey, endColKey := bck.Transform(end)
+	startKey, startColKey := t.cok.Transform(start)
+	endKey, endColKey := t.cok.Transform(end)
 
 	return rangeScan[K, V, *collateLeafNode[V]](t.root, startKey, endKey, startColKey, endColKey, t.restoreKey)
 }
@@ -324,11 +306,7 @@ func (t *collationSortedTree[K, V]) Range(start, end K) iter.Seq2[K, V] {
 // Search searches for element with the given key.
 // It returns whether the key is present (bool) and its value if it is present.
 func (t *collationSortedTree[K, V]) Search(key K) (V, bool) {
-	bck := CollationOrderKey[K]{
-		buf: t.buf,
-		c:   t.c,
-	}
-	keyS, colKey := bck.Transform(key)
+	keyS, colKey := t.cok.Transform(key)
 
 	var notFound V
 
@@ -339,8 +317,8 @@ func (t *collationSortedTree[K, V]) Search(key K) (V, bool) {
 		if n.tag == nodeKindLeaf {
 			leaf := (*collateLeafNode[V])(n.pointer)
 
-			if bytes.Compare(leaf.getKey(), keyS) == 0 {
-				return leaf.getValue(), true
+			if bytes.Equal(leaf.getKey(), keyS) {
+				return leaf.value, true
 			}
 			return notFound, false
 		}
