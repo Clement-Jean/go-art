@@ -18,8 +18,6 @@ type {{ .NodeName }}[V any] struct {
 
 func (n *{{ .NodeName }}[V]) getKey() []byte          { return unsafe.Slice(n.key, n.len) }
 func (n *{{ .NodeName }}[V]) getTransformKey() []byte { return unsafe.Slice(n.key, n.len) }
-func (n *{{ .NodeName }}[V]) getValue() V             { return n.value }
-func (n *{{ .NodeName }}[V]) setValue(val V)          { n.value = val }
 
 type {{ .Name }}[K {{ .KeysConstraint }}, V any] struct {
 	root nodeRef
@@ -28,7 +26,7 @@ type {{ .Name }}[K {{ .KeysConstraint }}, V any] struct {
 }
 
 func (t *{{ .Name }}[K, V]) restoreKey(ptr unsafe.Pointer) (K, V) {
-     l := (*floatLeafNode[V])(ptr)
+     l := (*{{ .NodeName }}[V])(ptr)
      keyS := l.getKey()
      {{if .AddNullByte}}
      	  keyS = keyS[:len(keyS)-1] // drop end byte
@@ -66,7 +64,7 @@ func (t *{{ .Name }}[K, V]) Delete(key K) bool {
 		if n.tag == nodeKindLeaf {
 			leaf := (*{{ .NodeName }}[V])(n.pointer)
 
-			if bytes.Compare(leaf.getKey(), keyS) == 0 {
+			if bytes.Equal(leaf.getKey(), keyS) {
 				*ref = nodeRef{}
 				t.size--
 				return true
@@ -93,7 +91,7 @@ func (t *{{ .Name }}[K, V]) Delete(key K) bool {
 		if child.tag == nodeKindLeaf {
 			leaf := (*{{ .NodeName }}[V])(child.pointer)
 
-			if bytes.Compare(leaf.getKey(), keyS) == 0 {
+			if bytes.Equal(leaf.getKey(), keyS) {
 				ref.deleteChild(keyS[depth])
 				t.size--
 				return true
@@ -134,91 +132,91 @@ func (t *{{ .Name }}[K, V]) Insert(key K, val V) {
 	depth := 0
 
 	for ref.pointer != nil {
-		if ref.tag == nodeKindLeaf {
-			nl := (*{{ .NodeName }}[V])(ref.pointer)
+		if ref.tag != nodeKindLeaf {
+			node := ref.node()
+			if node.prefixLen != 0 {
+				prefixDiff := prefixMismatch[V, *{{ .NodeName }}[V]](n, keyS, depth)
 
-			if bytes.Compare(keyS, nl.getKey()) == 0 {
-				nl.setValue(val)
+				if prefixDiff >= int(node.prefixLen) {
+					depth += int(node.prefixLen)
+					goto CONTINUE_SEARCH
+				}
+
+				newNode := nodePools[nodeKind4].Get().(*node4)
+
+				*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
+
+				newNode.prefixLen = uint32(prefixDiff)
+				newNode.prefix = node.prefix
+
+				if node.prefixLen <= maxPrefixLen {
+					newNode.addChild(ref, node.prefix[prefixDiff], n)
+					loLimit := prefixDiff + 1
+					node.prefixLen -= uint32(loLimit)
+					copy(node.prefix[:], node.prefix[loLimit:])
+				} else {
+					node.prefixLen -= uint32(prefixDiff + 1)
+					leafMin := (*{{ .NodeName }}[V])(minimum[V](n))
+					leafKey := leafMin.getTransformKey()
+
+					newNode.addChild(ref, leafKey[depth+prefixDiff], n)
+					loLimit := depth + prefixDiff + 1
+					copy(node.prefix[:], leafKey[loLimit:])
+				}
+
+				if depth+prefixDiff >= len(keyS) {
+					return
+				}
+				leafRef := nodeRef{pointer: createLeaf(), tag: nodeKindLeaf}
+				newNode.addChild(ref, keyS[depth+prefixDiff], leafRef)
 				return
 			}
 
-			leafKey := nl.getTransformKey()
-			newNode := nodePools[nodeKind4].Get().(*node4)
-
-			longestPrefix := longestCommonPrefix(leafKey, keyS, depth)
-			newNode.prefixLen = uint32(longestPrefix)
-
-			copy(newNode.prefix[:], keyS[depth:])
-
-			*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
-
-			splitPrefix := int(depth + longestPrefix)
-			if splitPrefix < len(leafKey) {
-				newNode.addChild(ref, leafKey[splitPrefix], n)
+		CONTINUE_SEARCH:
+			if depth >= len(keyS) {
+				return
 			}
 
-			if splitPrefix < len(keyS) {
-				leafRef := nodeRef{pointer: createLeaf(), tag: nodeKindLeaf}
-				newNode.addChild(ref, keyS[splitPrefix], leafRef)
+			child := ref.findChild(keyS[depth])
+			if child != nil {
+				n = *child
+				ref = child
+				depth++
+				continue
 			}
+
+			leafRef := nodeRef{pointer: createLeaf(), tag: nodeKindLeaf}
+			ref.addChild(keyS[depth], leafRef)
 			t.size++
 			return
 		}
 
-		node := ref.node()
-		if node.prefixLen != 0 {
-			prefixDiff := prefixMismatch[V, *{{ .NodeName }}[V]](n, keyS, depth)
+		nl := (*{{ .NodeName }}[V])(ref.pointer)
 
-			if prefixDiff >= int(node.prefixLen) {
-				depth += int(node.prefixLen)
-				goto CONTINUE_SEARCH
-			}
+		if bytes.Equal(keyS, nl.getKey()) {
+			nl.value = val
+			return
+		}
 
-			newNode := nodePools[nodeKind4].Get().(*node4)
+		leafKey := nl.getTransformKey()
+		newNode := nodePools[nodeKind4].Get().(*node4)
 
-			*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
+		longestPrefix := longestCommonPrefix(leafKey, keyS, depth)
+		newNode.prefixLen = uint32(longestPrefix)
 
-			newNode.prefixLen = uint32(prefixDiff)
-			newNode.prefix = node.prefix
+		copy(newNode.prefix[:], keyS[depth:])
 
-			if node.prefixLen <= maxPrefixLen {
-				newNode.addChild(ref, node.prefix[prefixDiff], n)
-				loLimit := prefixDiff + 1
-				node.prefixLen -= uint32(loLimit)
-				copy(node.prefix[:], node.prefix[loLimit:])
-			} else {
-				node.prefixLen -= uint32(prefixDiff + 1)
-				leafMin := (*{{ .NodeName }}[V])(minimum[V](n))
-				leafKey := leafMin.getTransformKey()
+		*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
 
-				newNode.addChild(ref, leafKey[depth+prefixDiff], n)
-				loLimit := depth + prefixDiff + 1
-				copy(node.prefix[:], leafKey[loLimit:])
-			}
+		splitPrefix := int(depth + longestPrefix)
+		if splitPrefix < len(leafKey) {
+			newNode.addChild(ref, leafKey[splitPrefix], n)
+		}
 
-			if depth+prefixDiff >= len(keyS) {
-				return
-			}
+		if splitPrefix < len(keyS) {
 			leafRef := nodeRef{pointer: createLeaf(), tag: nodeKindLeaf}
-			newNode.addChild(ref, keyS[depth+prefixDiff], leafRef)
-			return
+			newNode.addChild(ref, keyS[splitPrefix], leafRef)
 		}
-
-	CONTINUE_SEARCH:
-		if depth >= len(keyS) {
-			return
-		}
-
-		child := ref.findChild(keyS[depth])
-		if child != nil {
-			n = *child
-			ref = child
-			depth++
-			continue
-		}
-
-		leafRef := nodeRef{pointer: createLeaf(), tag: nodeKindLeaf}
-		ref.addChild(keyS[depth], leafRef)
 		t.size++
 		return
 	}
@@ -305,17 +303,9 @@ func (t *{{ .Name }}[K, V]) Search(key K) (V, bool) {
 	depth := 0
 
 	for n.pointer != nil {
-		if n.tag == nodeKindLeaf {
-			leaf := (*{{ .NodeName }}[V])(n.pointer)
-
-			if bytes.Compare(leaf.getKey(), keyS) == 0 {
-				return leaf.getValue(), true
-			}
-			return notFound, false
-		}
-
-		node := n.node()
-		if node.prefixLen != 0 {
+		if n.tag != nodeKindLeaf {
+		   node := n.node()
+		   if node.prefixLen != 0 {
 			prefixLen := node.checkPrefix(keyS, depth)
 
 			if prefixLen != int(min(maxPrefixLen, node.prefixLen)) {
@@ -323,51 +313,58 @@ func (t *{{ .Name }}[K, V]) Search(key K) (V, bool) {
 			}
 
 			depth += int(node.prefixLen)
+		   }
+
+		   b := keyS[depth]
+		   switch n.tag {
+        	   case nodeKind4:
+        	   	n4 := (*node4)(n.pointer)
+        
+        		if i := searchNode4(n4.keys, b); i != -1 && i < int(n4.childrenLen) {
+        		   n = n4.children[i]
+        		   depth++
+        		   continue
+        		}
+        
+		   case nodeKind16:
+        		n16 := (*node16)(n.pointer)
+        
+        		if idx := searchNode16(&n16.keys, n16.childrenLen, b); idx != -1 {
+        		   n = n16.children[idx]
+        		   depth++
+        		   continue
+        		}
+        
+        	   case nodeKind48:
+        		n48 := (*node48)(n.pointer)
+        
+        		if i := n48.keys[b]; i != 0 {
+        		   n = n48.children[i-1]
+        		   depth++
+        		   continue
+        		}
+        
+        	   case nodeKind256:
+        		n256 := (*node256)(n.pointer)
+        
+        		if n256.children[b].pointer != nil {
+        		   n = n256.children[b]
+        		   depth++
+        		   continue
+        		}
+        
+		   default:
+        		panic("shouldn't be possible!")
+        	   }
+	 	   break
 		}
 
-		b := keyS[depth]
-		switch n.tag {
-		case nodeKind4:
-			n4 := (*node4)(n.pointer)
+		leaf := (*{{ .NodeName }}[V])(n.pointer)
 
-			if i := searchNode4(n4.keys, b); i != -1 && i < int(n4.childrenLen) {
-				n = n4.children[i]
-				depth++
-				continue
-			}
-
-		case nodeKind16:
-			n16 := (*node16)(n.pointer)
-
-			if idx := searchNode16(&n16.keys, n16.childrenLen, b); idx != -1 {
-				n = n16.children[idx]
-				depth++
-				continue
-			}
-
-		case nodeKind48:
-			n48 := (*node48)(n.pointer)
-
-			if i := n48.keys[b]; i != 0 {
-				n = n48.children[i-1]
-				depth++
-				continue
-			}
-
-		case nodeKind256:
-			n256 := (*node256)(n.pointer)
-
-			if n256.children[b].pointer != nil {
-				n = n256.children[b]
-				depth++
-				continue
-			}
-
-		default:
-			panic("shouldn't be possible!")
+		if bytes.Equal(leaf.getKey(), keyS) {
+			return leaf.value, true
 		}
-
-		break
+		return notFound, false
 	}
 
 	return notFound, false

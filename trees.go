@@ -16,8 +16,6 @@ type alphaLeafNode[V any] struct {
 
 func (n *alphaLeafNode[V]) getKey() []byte          { return unsafe.Slice(n.key, n.len) }
 func (n *alphaLeafNode[V]) getTransformKey() []byte { return unsafe.Slice(n.key, n.len) }
-func (n *alphaLeafNode[V]) getValue() V             { return n.value }
-func (n *alphaLeafNode[V]) setValue(val V)          { n.value = val }
 
 type alphaSortedTree[K chars, V any] struct {
 	root nodeRef
@@ -26,7 +24,7 @@ type alphaSortedTree[K chars, V any] struct {
 }
 
 func (t *alphaSortedTree[K, V]) restoreKey(ptr unsafe.Pointer) (K, V) {
-	l := (*floatLeafNode[V])(ptr)
+	l := (*alphaLeafNode[V])(ptr)
 	keyS := l.getKey()
 
 	keyS = keyS[:len(keyS)-1] // drop end byte
@@ -63,7 +61,7 @@ func (t *alphaSortedTree[K, V]) Delete(key K) bool {
 		if n.tag == nodeKindLeaf {
 			leaf := (*alphaLeafNode[V])(n.pointer)
 
-			if bytes.Compare(leaf.getKey(), keyS) == 0 {
+			if bytes.Equal(leaf.getKey(), keyS) {
 				*ref = nodeRef{}
 				t.size--
 				return true
@@ -90,7 +88,7 @@ func (t *alphaSortedTree[K, V]) Delete(key K) bool {
 		if child.tag == nodeKindLeaf {
 			leaf := (*alphaLeafNode[V])(child.pointer)
 
-			if bytes.Compare(leaf.getKey(), keyS) == 0 {
+			if bytes.Equal(leaf.getKey(), keyS) {
 				ref.deleteChild(keyS[depth])
 				t.size--
 				return true
@@ -130,91 +128,91 @@ func (t *alphaSortedTree[K, V]) Insert(key K, val V) {
 	depth := 0
 
 	for ref.pointer != nil {
-		if ref.tag == nodeKindLeaf {
-			nl := (*alphaLeafNode[V])(ref.pointer)
+		if ref.tag != nodeKindLeaf {
+			node := ref.node()
+			if node.prefixLen != 0 {
+				prefixDiff := prefixMismatch[V, *alphaLeafNode[V]](n, keyS, depth)
 
-			if bytes.Compare(keyS, nl.getKey()) == 0 {
-				nl.setValue(val)
+				if prefixDiff >= int(node.prefixLen) {
+					depth += int(node.prefixLen)
+					goto CONTINUE_SEARCH
+				}
+
+				newNode := nodePools[nodeKind4].Get().(*node4)
+
+				*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
+
+				newNode.prefixLen = uint32(prefixDiff)
+				newNode.prefix = node.prefix
+
+				if node.prefixLen <= maxPrefixLen {
+					newNode.addChild(ref, node.prefix[prefixDiff], n)
+					loLimit := prefixDiff + 1
+					node.prefixLen -= uint32(loLimit)
+					copy(node.prefix[:], node.prefix[loLimit:])
+				} else {
+					node.prefixLen -= uint32(prefixDiff + 1)
+					leafMin := (*alphaLeafNode[V])(minimum[V](n))
+					leafKey := leafMin.getTransformKey()
+
+					newNode.addChild(ref, leafKey[depth+prefixDiff], n)
+					loLimit := depth + prefixDiff + 1
+					copy(node.prefix[:], leafKey[loLimit:])
+				}
+
+				if depth+prefixDiff >= len(keyS) {
+					return
+				}
+				leafRef := nodeRef{pointer: createLeaf(), tag: nodeKindLeaf}
+				newNode.addChild(ref, keyS[depth+prefixDiff], leafRef)
 				return
 			}
 
-			leafKey := nl.getTransformKey()
-			newNode := nodePools[nodeKind4].Get().(*node4)
-
-			longestPrefix := longestCommonPrefix(leafKey, keyS, depth)
-			newNode.prefixLen = uint32(longestPrefix)
-
-			copy(newNode.prefix[:], keyS[depth:])
-
-			*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
-
-			splitPrefix := int(depth + longestPrefix)
-			if splitPrefix < len(leafKey) {
-				newNode.addChild(ref, leafKey[splitPrefix], n)
+		CONTINUE_SEARCH:
+			if depth >= len(keyS) {
+				return
 			}
 
-			if splitPrefix < len(keyS) {
-				leafRef := nodeRef{pointer: createLeaf(), tag: nodeKindLeaf}
-				newNode.addChild(ref, keyS[splitPrefix], leafRef)
+			child := ref.findChild(keyS[depth])
+			if child != nil {
+				n = *child
+				ref = child
+				depth++
+				continue
 			}
+
+			leafRef := nodeRef{pointer: createLeaf(), tag: nodeKindLeaf}
+			ref.addChild(keyS[depth], leafRef)
 			t.size++
 			return
 		}
 
-		node := ref.node()
-		if node.prefixLen != 0 {
-			prefixDiff := prefixMismatch[V, *alphaLeafNode[V]](n, keyS, depth)
+		nl := (*alphaLeafNode[V])(ref.pointer)
 
-			if prefixDiff >= int(node.prefixLen) {
-				depth += int(node.prefixLen)
-				goto CONTINUE_SEARCH
-			}
+		if bytes.Equal(keyS, nl.getKey()) {
+			nl.value = val
+			return
+		}
 
-			newNode := nodePools[nodeKind4].Get().(*node4)
+		leafKey := nl.getTransformKey()
+		newNode := nodePools[nodeKind4].Get().(*node4)
 
-			*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
+		longestPrefix := longestCommonPrefix(leafKey, keyS, depth)
+		newNode.prefixLen = uint32(longestPrefix)
 
-			newNode.prefixLen = uint32(prefixDiff)
-			newNode.prefix = node.prefix
+		copy(newNode.prefix[:], keyS[depth:])
 
-			if node.prefixLen <= maxPrefixLen {
-				newNode.addChild(ref, node.prefix[prefixDiff], n)
-				loLimit := prefixDiff + 1
-				node.prefixLen -= uint32(loLimit)
-				copy(node.prefix[:], node.prefix[loLimit:])
-			} else {
-				node.prefixLen -= uint32(prefixDiff + 1)
-				leafMin := (*alphaLeafNode[V])(minimum[V](n))
-				leafKey := leafMin.getTransformKey()
+		*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
 
-				newNode.addChild(ref, leafKey[depth+prefixDiff], n)
-				loLimit := depth + prefixDiff + 1
-				copy(node.prefix[:], leafKey[loLimit:])
-			}
+		splitPrefix := int(depth + longestPrefix)
+		if splitPrefix < len(leafKey) {
+			newNode.addChild(ref, leafKey[splitPrefix], n)
+		}
 
-			if depth+prefixDiff >= len(keyS) {
-				return
-			}
+		if splitPrefix < len(keyS) {
 			leafRef := nodeRef{pointer: createLeaf(), tag: nodeKindLeaf}
-			newNode.addChild(ref, keyS[depth+prefixDiff], leafRef)
-			return
+			newNode.addChild(ref, keyS[splitPrefix], leafRef)
 		}
-
-	CONTINUE_SEARCH:
-		if depth >= len(keyS) {
-			return
-		}
-
-		child := ref.findChild(keyS[depth])
-		if child != nil {
-			n = *child
-			ref = child
-			depth++
-			continue
-		}
-
-		leafRef := nodeRef{pointer: createLeaf(), tag: nodeKindLeaf}
-		ref.addChild(keyS[depth], leafRef)
 		t.size++
 		return
 	}
@@ -296,69 +294,68 @@ func (t *alphaSortedTree[K, V]) Search(key K) (V, bool) {
 	depth := 0
 
 	for n.pointer != nil {
-		if n.tag == nodeKindLeaf {
-			leaf := (*alphaLeafNode[V])(n.pointer)
+		if n.tag != nodeKindLeaf {
+			node := n.node()
+			if node.prefixLen != 0 {
+				prefixLen := node.checkPrefix(keyS, depth)
 
-			if bytes.Compare(leaf.getKey(), keyS) == 0 {
-				return leaf.getValue(), true
+				if prefixLen != int(min(maxPrefixLen, node.prefixLen)) {
+					return notFound, false
+				}
+
+				depth += int(node.prefixLen)
 			}
-			return notFound, false
+
+			b := keyS[depth]
+			switch n.tag {
+			case nodeKind4:
+				n4 := (*node4)(n.pointer)
+
+				if i := searchNode4(n4.keys, b); i != -1 && i < int(n4.childrenLen) {
+					n = n4.children[i]
+					depth++
+					continue
+				}
+
+			case nodeKind16:
+				n16 := (*node16)(n.pointer)
+
+				if idx := searchNode16(&n16.keys, n16.childrenLen, b); idx != -1 {
+					n = n16.children[idx]
+					depth++
+					continue
+				}
+
+			case nodeKind48:
+				n48 := (*node48)(n.pointer)
+
+				if i := n48.keys[b]; i != 0 {
+					n = n48.children[i-1]
+					depth++
+					continue
+				}
+
+			case nodeKind256:
+				n256 := (*node256)(n.pointer)
+
+				if n256.children[b].pointer != nil {
+					n = n256.children[b]
+					depth++
+					continue
+				}
+
+			default:
+				panic("shouldn't be possible!")
+			}
+			break
 		}
 
-		node := n.node()
-		if node.prefixLen != 0 {
-			prefixLen := node.checkPrefix(keyS, depth)
+		leaf := (*alphaLeafNode[V])(n.pointer)
 
-			if prefixLen != int(min(maxPrefixLen, node.prefixLen)) {
-				return notFound, false
-			}
-
-			depth += int(node.prefixLen)
+		if bytes.Equal(leaf.getKey(), keyS) {
+			return leaf.value, true
 		}
-
-		b := keyS[depth]
-		switch n.tag {
-		case nodeKind4:
-			n4 := (*node4)(n.pointer)
-
-			if i := searchNode4(n4.keys, b); i != -1 && i < int(n4.childrenLen) {
-				n = n4.children[i]
-				depth++
-				continue
-			}
-
-		case nodeKind16:
-			n16 := (*node16)(n.pointer)
-
-			if idx := searchNode16(&n16.keys, n16.childrenLen, b); idx != -1 {
-				n = n16.children[idx]
-				depth++
-				continue
-			}
-
-		case nodeKind48:
-			n48 := (*node48)(n.pointer)
-
-			if i := n48.keys[b]; i != 0 {
-				n = n48.children[i-1]
-				depth++
-				continue
-			}
-
-		case nodeKind256:
-			n256 := (*node256)(n.pointer)
-
-			if n256.children[b].pointer != nil {
-				n = n256.children[b]
-				depth++
-				continue
-			}
-
-		default:
-			panic("shouldn't be possible!")
-		}
-
-		break
+		return notFound, false
 	}
 
 	return notFound, false
@@ -378,8 +375,6 @@ type unsignedLeafNode[V any] struct {
 
 func (n *unsignedLeafNode[V]) getKey() []byte          { return unsafe.Slice(n.key, n.len) }
 func (n *unsignedLeafNode[V]) getTransformKey() []byte { return unsafe.Slice(n.key, n.len) }
-func (n *unsignedLeafNode[V]) getValue() V             { return n.value }
-func (n *unsignedLeafNode[V]) setValue(val V)          { n.value = val }
 
 type unsignedSortedTree[K uints, V any] struct {
 	root nodeRef
@@ -388,7 +383,7 @@ type unsignedSortedTree[K uints, V any] struct {
 }
 
 func (t *unsignedSortedTree[K, V]) restoreKey(ptr unsafe.Pointer) (K, V) {
-	l := (*floatLeafNode[V])(ptr)
+	l := (*unsignedLeafNode[V])(ptr)
 	keyS := l.getKey()
 
 	return t.bck.Restore(keyS), l.value
@@ -421,7 +416,7 @@ func (t *unsignedSortedTree[K, V]) Delete(key K) bool {
 		if n.tag == nodeKindLeaf {
 			leaf := (*unsignedLeafNode[V])(n.pointer)
 
-			if bytes.Compare(leaf.getKey(), keyS) == 0 {
+			if bytes.Equal(leaf.getKey(), keyS) {
 				*ref = nodeRef{}
 				t.size--
 				return true
@@ -448,7 +443,7 @@ func (t *unsignedSortedTree[K, V]) Delete(key K) bool {
 		if child.tag == nodeKindLeaf {
 			leaf := (*unsignedLeafNode[V])(child.pointer)
 
-			if bytes.Compare(leaf.getKey(), keyS) == 0 {
+			if bytes.Equal(leaf.getKey(), keyS) {
 				ref.deleteChild(keyS[depth])
 				t.size--
 				return true
@@ -486,91 +481,91 @@ func (t *unsignedSortedTree[K, V]) Insert(key K, val V) {
 	depth := 0
 
 	for ref.pointer != nil {
-		if ref.tag == nodeKindLeaf {
-			nl := (*unsignedLeafNode[V])(ref.pointer)
+		if ref.tag != nodeKindLeaf {
+			node := ref.node()
+			if node.prefixLen != 0 {
+				prefixDiff := prefixMismatch[V, *unsignedLeafNode[V]](n, keyS, depth)
 
-			if bytes.Compare(keyS, nl.getKey()) == 0 {
-				nl.setValue(val)
+				if prefixDiff >= int(node.prefixLen) {
+					depth += int(node.prefixLen)
+					goto CONTINUE_SEARCH
+				}
+
+				newNode := nodePools[nodeKind4].Get().(*node4)
+
+				*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
+
+				newNode.prefixLen = uint32(prefixDiff)
+				newNode.prefix = node.prefix
+
+				if node.prefixLen <= maxPrefixLen {
+					newNode.addChild(ref, node.prefix[prefixDiff], n)
+					loLimit := prefixDiff + 1
+					node.prefixLen -= uint32(loLimit)
+					copy(node.prefix[:], node.prefix[loLimit:])
+				} else {
+					node.prefixLen -= uint32(prefixDiff + 1)
+					leafMin := (*unsignedLeafNode[V])(minimum[V](n))
+					leafKey := leafMin.getTransformKey()
+
+					newNode.addChild(ref, leafKey[depth+prefixDiff], n)
+					loLimit := depth + prefixDiff + 1
+					copy(node.prefix[:], leafKey[loLimit:])
+				}
+
+				if depth+prefixDiff >= len(keyS) {
+					return
+				}
+				leafRef := nodeRef{pointer: createLeaf(), tag: nodeKindLeaf}
+				newNode.addChild(ref, keyS[depth+prefixDiff], leafRef)
 				return
 			}
 
-			leafKey := nl.getTransformKey()
-			newNode := nodePools[nodeKind4].Get().(*node4)
-
-			longestPrefix := longestCommonPrefix(leafKey, keyS, depth)
-			newNode.prefixLen = uint32(longestPrefix)
-
-			copy(newNode.prefix[:], keyS[depth:])
-
-			*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
-
-			splitPrefix := int(depth + longestPrefix)
-			if splitPrefix < len(leafKey) {
-				newNode.addChild(ref, leafKey[splitPrefix], n)
+		CONTINUE_SEARCH:
+			if depth >= len(keyS) {
+				return
 			}
 
-			if splitPrefix < len(keyS) {
-				leafRef := nodeRef{pointer: createLeaf(), tag: nodeKindLeaf}
-				newNode.addChild(ref, keyS[splitPrefix], leafRef)
+			child := ref.findChild(keyS[depth])
+			if child != nil {
+				n = *child
+				ref = child
+				depth++
+				continue
 			}
+
+			leafRef := nodeRef{pointer: createLeaf(), tag: nodeKindLeaf}
+			ref.addChild(keyS[depth], leafRef)
 			t.size++
 			return
 		}
 
-		node := ref.node()
-		if node.prefixLen != 0 {
-			prefixDiff := prefixMismatch[V, *unsignedLeafNode[V]](n, keyS, depth)
+		nl := (*unsignedLeafNode[V])(ref.pointer)
 
-			if prefixDiff >= int(node.prefixLen) {
-				depth += int(node.prefixLen)
-				goto CONTINUE_SEARCH
-			}
+		if bytes.Equal(keyS, nl.getKey()) {
+			nl.value = val
+			return
+		}
 
-			newNode := nodePools[nodeKind4].Get().(*node4)
+		leafKey := nl.getTransformKey()
+		newNode := nodePools[nodeKind4].Get().(*node4)
 
-			*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
+		longestPrefix := longestCommonPrefix(leafKey, keyS, depth)
+		newNode.prefixLen = uint32(longestPrefix)
 
-			newNode.prefixLen = uint32(prefixDiff)
-			newNode.prefix = node.prefix
+		copy(newNode.prefix[:], keyS[depth:])
 
-			if node.prefixLen <= maxPrefixLen {
-				newNode.addChild(ref, node.prefix[prefixDiff], n)
-				loLimit := prefixDiff + 1
-				node.prefixLen -= uint32(loLimit)
-				copy(node.prefix[:], node.prefix[loLimit:])
-			} else {
-				node.prefixLen -= uint32(prefixDiff + 1)
-				leafMin := (*unsignedLeafNode[V])(minimum[V](n))
-				leafKey := leafMin.getTransformKey()
+		*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
 
-				newNode.addChild(ref, leafKey[depth+prefixDiff], n)
-				loLimit := depth + prefixDiff + 1
-				copy(node.prefix[:], leafKey[loLimit:])
-			}
+		splitPrefix := int(depth + longestPrefix)
+		if splitPrefix < len(leafKey) {
+			newNode.addChild(ref, leafKey[splitPrefix], n)
+		}
 
-			if depth+prefixDiff >= len(keyS) {
-				return
-			}
+		if splitPrefix < len(keyS) {
 			leafRef := nodeRef{pointer: createLeaf(), tag: nodeKindLeaf}
-			newNode.addChild(ref, keyS[depth+prefixDiff], leafRef)
-			return
+			newNode.addChild(ref, keyS[splitPrefix], leafRef)
 		}
-
-	CONTINUE_SEARCH:
-		if depth >= len(keyS) {
-			return
-		}
-
-		child := ref.findChild(keyS[depth])
-		if child != nil {
-			n = *child
-			ref = child
-			depth++
-			continue
-		}
-
-		leafRef := nodeRef{pointer: createLeaf(), tag: nodeKindLeaf}
-		ref.addChild(keyS[depth], leafRef)
 		t.size++
 		return
 	}
@@ -623,69 +618,68 @@ func (t *unsignedSortedTree[K, V]) Search(key K) (V, bool) {
 	depth := 0
 
 	for n.pointer != nil {
-		if n.tag == nodeKindLeaf {
-			leaf := (*unsignedLeafNode[V])(n.pointer)
+		if n.tag != nodeKindLeaf {
+			node := n.node()
+			if node.prefixLen != 0 {
+				prefixLen := node.checkPrefix(keyS, depth)
 
-			if bytes.Compare(leaf.getKey(), keyS) == 0 {
-				return leaf.getValue(), true
+				if prefixLen != int(min(maxPrefixLen, node.prefixLen)) {
+					return notFound, false
+				}
+
+				depth += int(node.prefixLen)
 			}
-			return notFound, false
+
+			b := keyS[depth]
+			switch n.tag {
+			case nodeKind4:
+				n4 := (*node4)(n.pointer)
+
+				if i := searchNode4(n4.keys, b); i != -1 && i < int(n4.childrenLen) {
+					n = n4.children[i]
+					depth++
+					continue
+				}
+
+			case nodeKind16:
+				n16 := (*node16)(n.pointer)
+
+				if idx := searchNode16(&n16.keys, n16.childrenLen, b); idx != -1 {
+					n = n16.children[idx]
+					depth++
+					continue
+				}
+
+			case nodeKind48:
+				n48 := (*node48)(n.pointer)
+
+				if i := n48.keys[b]; i != 0 {
+					n = n48.children[i-1]
+					depth++
+					continue
+				}
+
+			case nodeKind256:
+				n256 := (*node256)(n.pointer)
+
+				if n256.children[b].pointer != nil {
+					n = n256.children[b]
+					depth++
+					continue
+				}
+
+			default:
+				panic("shouldn't be possible!")
+			}
+			break
 		}
 
-		node := n.node()
-		if node.prefixLen != 0 {
-			prefixLen := node.checkPrefix(keyS, depth)
+		leaf := (*unsignedLeafNode[V])(n.pointer)
 
-			if prefixLen != int(min(maxPrefixLen, node.prefixLen)) {
-				return notFound, false
-			}
-
-			depth += int(node.prefixLen)
+		if bytes.Equal(leaf.getKey(), keyS) {
+			return leaf.value, true
 		}
-
-		b := keyS[depth]
-		switch n.tag {
-		case nodeKind4:
-			n4 := (*node4)(n.pointer)
-
-			if i := searchNode4(n4.keys, b); i != -1 && i < int(n4.childrenLen) {
-				n = n4.children[i]
-				depth++
-				continue
-			}
-
-		case nodeKind16:
-			n16 := (*node16)(n.pointer)
-
-			if idx := searchNode16(&n16.keys, n16.childrenLen, b); idx != -1 {
-				n = n16.children[idx]
-				depth++
-				continue
-			}
-
-		case nodeKind48:
-			n48 := (*node48)(n.pointer)
-
-			if i := n48.keys[b]; i != 0 {
-				n = n48.children[i-1]
-				depth++
-				continue
-			}
-
-		case nodeKind256:
-			n256 := (*node256)(n.pointer)
-
-			if n256.children[b].pointer != nil {
-				n = n256.children[b]
-				depth++
-				continue
-			}
-
-		default:
-			panic("shouldn't be possible!")
-		}
-
-		break
+		return notFound, false
 	}
 
 	return notFound, false
@@ -705,8 +699,6 @@ type signedLeafNode[V any] struct {
 
 func (n *signedLeafNode[V]) getKey() []byte          { return unsafe.Slice(n.key, n.len) }
 func (n *signedLeafNode[V]) getTransformKey() []byte { return unsafe.Slice(n.key, n.len) }
-func (n *signedLeafNode[V]) getValue() V             { return n.value }
-func (n *signedLeafNode[V]) setValue(val V)          { n.value = val }
 
 type signedSortedTree[K ints, V any] struct {
 	root nodeRef
@@ -715,7 +707,7 @@ type signedSortedTree[K ints, V any] struct {
 }
 
 func (t *signedSortedTree[K, V]) restoreKey(ptr unsafe.Pointer) (K, V) {
-	l := (*floatLeafNode[V])(ptr)
+	l := (*signedLeafNode[V])(ptr)
 	keyS := l.getKey()
 
 	return t.bck.Restore(keyS), l.value
@@ -748,7 +740,7 @@ func (t *signedSortedTree[K, V]) Delete(key K) bool {
 		if n.tag == nodeKindLeaf {
 			leaf := (*signedLeafNode[V])(n.pointer)
 
-			if bytes.Compare(leaf.getKey(), keyS) == 0 {
+			if bytes.Equal(leaf.getKey(), keyS) {
 				*ref = nodeRef{}
 				t.size--
 				return true
@@ -775,7 +767,7 @@ func (t *signedSortedTree[K, V]) Delete(key K) bool {
 		if child.tag == nodeKindLeaf {
 			leaf := (*signedLeafNode[V])(child.pointer)
 
-			if bytes.Compare(leaf.getKey(), keyS) == 0 {
+			if bytes.Equal(leaf.getKey(), keyS) {
 				ref.deleteChild(keyS[depth])
 				t.size--
 				return true
@@ -813,91 +805,91 @@ func (t *signedSortedTree[K, V]) Insert(key K, val V) {
 	depth := 0
 
 	for ref.pointer != nil {
-		if ref.tag == nodeKindLeaf {
-			nl := (*signedLeafNode[V])(ref.pointer)
+		if ref.tag != nodeKindLeaf {
+			node := ref.node()
+			if node.prefixLen != 0 {
+				prefixDiff := prefixMismatch[V, *signedLeafNode[V]](n, keyS, depth)
 
-			if bytes.Compare(keyS, nl.getKey()) == 0 {
-				nl.setValue(val)
+				if prefixDiff >= int(node.prefixLen) {
+					depth += int(node.prefixLen)
+					goto CONTINUE_SEARCH
+				}
+
+				newNode := nodePools[nodeKind4].Get().(*node4)
+
+				*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
+
+				newNode.prefixLen = uint32(prefixDiff)
+				newNode.prefix = node.prefix
+
+				if node.prefixLen <= maxPrefixLen {
+					newNode.addChild(ref, node.prefix[prefixDiff], n)
+					loLimit := prefixDiff + 1
+					node.prefixLen -= uint32(loLimit)
+					copy(node.prefix[:], node.prefix[loLimit:])
+				} else {
+					node.prefixLen -= uint32(prefixDiff + 1)
+					leafMin := (*signedLeafNode[V])(minimum[V](n))
+					leafKey := leafMin.getTransformKey()
+
+					newNode.addChild(ref, leafKey[depth+prefixDiff], n)
+					loLimit := depth + prefixDiff + 1
+					copy(node.prefix[:], leafKey[loLimit:])
+				}
+
+				if depth+prefixDiff >= len(keyS) {
+					return
+				}
+				leafRef := nodeRef{pointer: createLeaf(), tag: nodeKindLeaf}
+				newNode.addChild(ref, keyS[depth+prefixDiff], leafRef)
 				return
 			}
 
-			leafKey := nl.getTransformKey()
-			newNode := nodePools[nodeKind4].Get().(*node4)
-
-			longestPrefix := longestCommonPrefix(leafKey, keyS, depth)
-			newNode.prefixLen = uint32(longestPrefix)
-
-			copy(newNode.prefix[:], keyS[depth:])
-
-			*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
-
-			splitPrefix := int(depth + longestPrefix)
-			if splitPrefix < len(leafKey) {
-				newNode.addChild(ref, leafKey[splitPrefix], n)
+		CONTINUE_SEARCH:
+			if depth >= len(keyS) {
+				return
 			}
 
-			if splitPrefix < len(keyS) {
-				leafRef := nodeRef{pointer: createLeaf(), tag: nodeKindLeaf}
-				newNode.addChild(ref, keyS[splitPrefix], leafRef)
+			child := ref.findChild(keyS[depth])
+			if child != nil {
+				n = *child
+				ref = child
+				depth++
+				continue
 			}
+
+			leafRef := nodeRef{pointer: createLeaf(), tag: nodeKindLeaf}
+			ref.addChild(keyS[depth], leafRef)
 			t.size++
 			return
 		}
 
-		node := ref.node()
-		if node.prefixLen != 0 {
-			prefixDiff := prefixMismatch[V, *signedLeafNode[V]](n, keyS, depth)
+		nl := (*signedLeafNode[V])(ref.pointer)
 
-			if prefixDiff >= int(node.prefixLen) {
-				depth += int(node.prefixLen)
-				goto CONTINUE_SEARCH
-			}
+		if bytes.Equal(keyS, nl.getKey()) {
+			nl.value = val
+			return
+		}
 
-			newNode := nodePools[nodeKind4].Get().(*node4)
+		leafKey := nl.getTransformKey()
+		newNode := nodePools[nodeKind4].Get().(*node4)
 
-			*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
+		longestPrefix := longestCommonPrefix(leafKey, keyS, depth)
+		newNode.prefixLen = uint32(longestPrefix)
 
-			newNode.prefixLen = uint32(prefixDiff)
-			newNode.prefix = node.prefix
+		copy(newNode.prefix[:], keyS[depth:])
 
-			if node.prefixLen <= maxPrefixLen {
-				newNode.addChild(ref, node.prefix[prefixDiff], n)
-				loLimit := prefixDiff + 1
-				node.prefixLen -= uint32(loLimit)
-				copy(node.prefix[:], node.prefix[loLimit:])
-			} else {
-				node.prefixLen -= uint32(prefixDiff + 1)
-				leafMin := (*signedLeafNode[V])(minimum[V](n))
-				leafKey := leafMin.getTransformKey()
+		*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
 
-				newNode.addChild(ref, leafKey[depth+prefixDiff], n)
-				loLimit := depth + prefixDiff + 1
-				copy(node.prefix[:], leafKey[loLimit:])
-			}
+		splitPrefix := int(depth + longestPrefix)
+		if splitPrefix < len(leafKey) {
+			newNode.addChild(ref, leafKey[splitPrefix], n)
+		}
 
-			if depth+prefixDiff >= len(keyS) {
-				return
-			}
+		if splitPrefix < len(keyS) {
 			leafRef := nodeRef{pointer: createLeaf(), tag: nodeKindLeaf}
-			newNode.addChild(ref, keyS[depth+prefixDiff], leafRef)
-			return
+			newNode.addChild(ref, keyS[splitPrefix], leafRef)
 		}
-
-	CONTINUE_SEARCH:
-		if depth >= len(keyS) {
-			return
-		}
-
-		child := ref.findChild(keyS[depth])
-		if child != nil {
-			n = *child
-			ref = child
-			depth++
-			continue
-		}
-
-		leafRef := nodeRef{pointer: createLeaf(), tag: nodeKindLeaf}
-		ref.addChild(keyS[depth], leafRef)
 		t.size++
 		return
 	}
@@ -950,69 +942,68 @@ func (t *signedSortedTree[K, V]) Search(key K) (V, bool) {
 	depth := 0
 
 	for n.pointer != nil {
-		if n.tag == nodeKindLeaf {
-			leaf := (*signedLeafNode[V])(n.pointer)
+		if n.tag != nodeKindLeaf {
+			node := n.node()
+			if node.prefixLen != 0 {
+				prefixLen := node.checkPrefix(keyS, depth)
 
-			if bytes.Compare(leaf.getKey(), keyS) == 0 {
-				return leaf.getValue(), true
+				if prefixLen != int(min(maxPrefixLen, node.prefixLen)) {
+					return notFound, false
+				}
+
+				depth += int(node.prefixLen)
 			}
-			return notFound, false
+
+			b := keyS[depth]
+			switch n.tag {
+			case nodeKind4:
+				n4 := (*node4)(n.pointer)
+
+				if i := searchNode4(n4.keys, b); i != -1 && i < int(n4.childrenLen) {
+					n = n4.children[i]
+					depth++
+					continue
+				}
+
+			case nodeKind16:
+				n16 := (*node16)(n.pointer)
+
+				if idx := searchNode16(&n16.keys, n16.childrenLen, b); idx != -1 {
+					n = n16.children[idx]
+					depth++
+					continue
+				}
+
+			case nodeKind48:
+				n48 := (*node48)(n.pointer)
+
+				if i := n48.keys[b]; i != 0 {
+					n = n48.children[i-1]
+					depth++
+					continue
+				}
+
+			case nodeKind256:
+				n256 := (*node256)(n.pointer)
+
+				if n256.children[b].pointer != nil {
+					n = n256.children[b]
+					depth++
+					continue
+				}
+
+			default:
+				panic("shouldn't be possible!")
+			}
+			break
 		}
 
-		node := n.node()
-		if node.prefixLen != 0 {
-			prefixLen := node.checkPrefix(keyS, depth)
+		leaf := (*signedLeafNode[V])(n.pointer)
 
-			if prefixLen != int(min(maxPrefixLen, node.prefixLen)) {
-				return notFound, false
-			}
-
-			depth += int(node.prefixLen)
+		if bytes.Equal(leaf.getKey(), keyS) {
+			return leaf.value, true
 		}
-
-		b := keyS[depth]
-		switch n.tag {
-		case nodeKind4:
-			n4 := (*node4)(n.pointer)
-
-			if i := searchNode4(n4.keys, b); i != -1 && i < int(n4.childrenLen) {
-				n = n4.children[i]
-				depth++
-				continue
-			}
-
-		case nodeKind16:
-			n16 := (*node16)(n.pointer)
-
-			if idx := searchNode16(&n16.keys, n16.childrenLen, b); idx != -1 {
-				n = n16.children[idx]
-				depth++
-				continue
-			}
-
-		case nodeKind48:
-			n48 := (*node48)(n.pointer)
-
-			if i := n48.keys[b]; i != 0 {
-				n = n48.children[i-1]
-				depth++
-				continue
-			}
-
-		case nodeKind256:
-			n256 := (*node256)(n.pointer)
-
-			if n256.children[b].pointer != nil {
-				n = n256.children[b]
-				depth++
-				continue
-			}
-
-		default:
-			panic("shouldn't be possible!")
-		}
-
-		break
+		return notFound, false
 	}
 
 	return notFound, false
@@ -1032,8 +1023,6 @@ type floatLeafNode[V any] struct {
 
 func (n *floatLeafNode[V]) getKey() []byte          { return unsafe.Slice(n.key, n.len) }
 func (n *floatLeafNode[V]) getTransformKey() []byte { return unsafe.Slice(n.key, n.len) }
-func (n *floatLeafNode[V]) getValue() V             { return n.value }
-func (n *floatLeafNode[V]) setValue(val V)          { n.value = val }
 
 type floatSortedTree[K floats, V any] struct {
 	root nodeRef
@@ -1075,7 +1064,7 @@ func (t *floatSortedTree[K, V]) Delete(key K) bool {
 		if n.tag == nodeKindLeaf {
 			leaf := (*floatLeafNode[V])(n.pointer)
 
-			if bytes.Compare(leaf.getKey(), keyS) == 0 {
+			if bytes.Equal(leaf.getKey(), keyS) {
 				*ref = nodeRef{}
 				t.size--
 				return true
@@ -1102,7 +1091,7 @@ func (t *floatSortedTree[K, V]) Delete(key K) bool {
 		if child.tag == nodeKindLeaf {
 			leaf := (*floatLeafNode[V])(child.pointer)
 
-			if bytes.Compare(leaf.getKey(), keyS) == 0 {
+			if bytes.Equal(leaf.getKey(), keyS) {
 				ref.deleteChild(keyS[depth])
 				t.size--
 				return true
@@ -1140,91 +1129,91 @@ func (t *floatSortedTree[K, V]) Insert(key K, val V) {
 	depth := 0
 
 	for ref.pointer != nil {
-		if ref.tag == nodeKindLeaf {
-			nl := (*floatLeafNode[V])(ref.pointer)
+		if ref.tag != nodeKindLeaf {
+			node := ref.node()
+			if node.prefixLen != 0 {
+				prefixDiff := prefixMismatch[V, *floatLeafNode[V]](n, keyS, depth)
 
-			if bytes.Compare(keyS, nl.getKey()) == 0 {
-				nl.setValue(val)
+				if prefixDiff >= int(node.prefixLen) {
+					depth += int(node.prefixLen)
+					goto CONTINUE_SEARCH
+				}
+
+				newNode := nodePools[nodeKind4].Get().(*node4)
+
+				*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
+
+				newNode.prefixLen = uint32(prefixDiff)
+				newNode.prefix = node.prefix
+
+				if node.prefixLen <= maxPrefixLen {
+					newNode.addChild(ref, node.prefix[prefixDiff], n)
+					loLimit := prefixDiff + 1
+					node.prefixLen -= uint32(loLimit)
+					copy(node.prefix[:], node.prefix[loLimit:])
+				} else {
+					node.prefixLen -= uint32(prefixDiff + 1)
+					leafMin := (*floatLeafNode[V])(minimum[V](n))
+					leafKey := leafMin.getTransformKey()
+
+					newNode.addChild(ref, leafKey[depth+prefixDiff], n)
+					loLimit := depth + prefixDiff + 1
+					copy(node.prefix[:], leafKey[loLimit:])
+				}
+
+				if depth+prefixDiff >= len(keyS) {
+					return
+				}
+				leafRef := nodeRef{pointer: createLeaf(), tag: nodeKindLeaf}
+				newNode.addChild(ref, keyS[depth+prefixDiff], leafRef)
 				return
 			}
 
-			leafKey := nl.getTransformKey()
-			newNode := nodePools[nodeKind4].Get().(*node4)
-
-			longestPrefix := longestCommonPrefix(leafKey, keyS, depth)
-			newNode.prefixLen = uint32(longestPrefix)
-
-			copy(newNode.prefix[:], keyS[depth:])
-
-			*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
-
-			splitPrefix := int(depth + longestPrefix)
-			if splitPrefix < len(leafKey) {
-				newNode.addChild(ref, leafKey[splitPrefix], n)
+		CONTINUE_SEARCH:
+			if depth >= len(keyS) {
+				return
 			}
 
-			if splitPrefix < len(keyS) {
-				leafRef := nodeRef{pointer: createLeaf(), tag: nodeKindLeaf}
-				newNode.addChild(ref, keyS[splitPrefix], leafRef)
+			child := ref.findChild(keyS[depth])
+			if child != nil {
+				n = *child
+				ref = child
+				depth++
+				continue
 			}
+
+			leafRef := nodeRef{pointer: createLeaf(), tag: nodeKindLeaf}
+			ref.addChild(keyS[depth], leafRef)
 			t.size++
 			return
 		}
 
-		node := ref.node()
-		if node.prefixLen != 0 {
-			prefixDiff := prefixMismatch[V, *floatLeafNode[V]](n, keyS, depth)
+		nl := (*floatLeafNode[V])(ref.pointer)
 
-			if prefixDiff >= int(node.prefixLen) {
-				depth += int(node.prefixLen)
-				goto CONTINUE_SEARCH
-			}
+		if bytes.Equal(keyS, nl.getKey()) {
+			nl.value = val
+			return
+		}
 
-			newNode := nodePools[nodeKind4].Get().(*node4)
+		leafKey := nl.getTransformKey()
+		newNode := nodePools[nodeKind4].Get().(*node4)
 
-			*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
+		longestPrefix := longestCommonPrefix(leafKey, keyS, depth)
+		newNode.prefixLen = uint32(longestPrefix)
 
-			newNode.prefixLen = uint32(prefixDiff)
-			newNode.prefix = node.prefix
+		copy(newNode.prefix[:], keyS[depth:])
 
-			if node.prefixLen <= maxPrefixLen {
-				newNode.addChild(ref, node.prefix[prefixDiff], n)
-				loLimit := prefixDiff + 1
-				node.prefixLen -= uint32(loLimit)
-				copy(node.prefix[:], node.prefix[loLimit:])
-			} else {
-				node.prefixLen -= uint32(prefixDiff + 1)
-				leafMin := (*floatLeafNode[V])(minimum[V](n))
-				leafKey := leafMin.getTransformKey()
+		*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
 
-				newNode.addChild(ref, leafKey[depth+prefixDiff], n)
-				loLimit := depth + prefixDiff + 1
-				copy(node.prefix[:], leafKey[loLimit:])
-			}
+		splitPrefix := int(depth + longestPrefix)
+		if splitPrefix < len(leafKey) {
+			newNode.addChild(ref, leafKey[splitPrefix], n)
+		}
 
-			if depth+prefixDiff >= len(keyS) {
-				return
-			}
+		if splitPrefix < len(keyS) {
 			leafRef := nodeRef{pointer: createLeaf(), tag: nodeKindLeaf}
-			newNode.addChild(ref, keyS[depth+prefixDiff], leafRef)
-			return
+			newNode.addChild(ref, keyS[splitPrefix], leafRef)
 		}
-
-	CONTINUE_SEARCH:
-		if depth >= len(keyS) {
-			return
-		}
-
-		child := ref.findChild(keyS[depth])
-		if child != nil {
-			n = *child
-			ref = child
-			depth++
-			continue
-		}
-
-		leafRef := nodeRef{pointer: createLeaf(), tag: nodeKindLeaf}
-		ref.addChild(keyS[depth], leafRef)
 		t.size++
 		return
 	}
@@ -1277,69 +1266,68 @@ func (t *floatSortedTree[K, V]) Search(key K) (V, bool) {
 	depth := 0
 
 	for n.pointer != nil {
-		if n.tag == nodeKindLeaf {
-			leaf := (*floatLeafNode[V])(n.pointer)
+		if n.tag != nodeKindLeaf {
+			node := n.node()
+			if node.prefixLen != 0 {
+				prefixLen := node.checkPrefix(keyS, depth)
 
-			if bytes.Compare(leaf.getKey(), keyS) == 0 {
-				return leaf.getValue(), true
+				if prefixLen != int(min(maxPrefixLen, node.prefixLen)) {
+					return notFound, false
+				}
+
+				depth += int(node.prefixLen)
 			}
-			return notFound, false
+
+			b := keyS[depth]
+			switch n.tag {
+			case nodeKind4:
+				n4 := (*node4)(n.pointer)
+
+				if i := searchNode4(n4.keys, b); i != -1 && i < int(n4.childrenLen) {
+					n = n4.children[i]
+					depth++
+					continue
+				}
+
+			case nodeKind16:
+				n16 := (*node16)(n.pointer)
+
+				if idx := searchNode16(&n16.keys, n16.childrenLen, b); idx != -1 {
+					n = n16.children[idx]
+					depth++
+					continue
+				}
+
+			case nodeKind48:
+				n48 := (*node48)(n.pointer)
+
+				if i := n48.keys[b]; i != 0 {
+					n = n48.children[i-1]
+					depth++
+					continue
+				}
+
+			case nodeKind256:
+				n256 := (*node256)(n.pointer)
+
+				if n256.children[b].pointer != nil {
+					n = n256.children[b]
+					depth++
+					continue
+				}
+
+			default:
+				panic("shouldn't be possible!")
+			}
+			break
 		}
 
-		node := n.node()
-		if node.prefixLen != 0 {
-			prefixLen := node.checkPrefix(keyS, depth)
+		leaf := (*floatLeafNode[V])(n.pointer)
 
-			if prefixLen != int(min(maxPrefixLen, node.prefixLen)) {
-				return notFound, false
-			}
-
-			depth += int(node.prefixLen)
+		if bytes.Equal(leaf.getKey(), keyS) {
+			return leaf.value, true
 		}
-
-		b := keyS[depth]
-		switch n.tag {
-		case nodeKind4:
-			n4 := (*node4)(n.pointer)
-
-			if i := searchNode4(n4.keys, b); i != -1 && i < int(n4.childrenLen) {
-				n = n4.children[i]
-				depth++
-				continue
-			}
-
-		case nodeKind16:
-			n16 := (*node16)(n.pointer)
-
-			if idx := searchNode16(&n16.keys, n16.childrenLen, b); idx != -1 {
-				n = n16.children[idx]
-				depth++
-				continue
-			}
-
-		case nodeKind48:
-			n48 := (*node48)(n.pointer)
-
-			if i := n48.keys[b]; i != 0 {
-				n = n48.children[i-1]
-				depth++
-				continue
-			}
-
-		case nodeKind256:
-			n256 := (*node256)(n.pointer)
-
-			if n256.children[b].pointer != nil {
-				n = n256.children[b]
-				depth++
-				continue
-			}
-
-		default:
-			panic("shouldn't be possible!")
-		}
-
-		break
+		return notFound, false
 	}
 
 	return notFound, false
@@ -1359,8 +1347,6 @@ type compoundLeafNode[V any] struct {
 
 func (n *compoundLeafNode[V]) getKey() []byte          { return unsafe.Slice(n.key, n.len) }
 func (n *compoundLeafNode[V]) getTransformKey() []byte { return unsafe.Slice(n.key, n.len) }
-func (n *compoundLeafNode[V]) getValue() V             { return n.value }
-func (n *compoundLeafNode[V]) setValue(val V)          { n.value = val }
 
 type compoundSortedTree[K any, V any] struct {
 	root nodeRef
@@ -1369,7 +1355,7 @@ type compoundSortedTree[K any, V any] struct {
 }
 
 func (t *compoundSortedTree[K, V]) restoreKey(ptr unsafe.Pointer) (K, V) {
-	l := (*floatLeafNode[V])(ptr)
+	l := (*compoundLeafNode[V])(ptr)
 	keyS := l.getKey()
 
 	return t.bck.Restore(keyS), l.value
@@ -1402,7 +1388,7 @@ func (t *compoundSortedTree[K, V]) Delete(key K) bool {
 		if n.tag == nodeKindLeaf {
 			leaf := (*compoundLeafNode[V])(n.pointer)
 
-			if bytes.Compare(leaf.getKey(), keyS) == 0 {
+			if bytes.Equal(leaf.getKey(), keyS) {
 				*ref = nodeRef{}
 				t.size--
 				return true
@@ -1429,7 +1415,7 @@ func (t *compoundSortedTree[K, V]) Delete(key K) bool {
 		if child.tag == nodeKindLeaf {
 			leaf := (*compoundLeafNode[V])(child.pointer)
 
-			if bytes.Compare(leaf.getKey(), keyS) == 0 {
+			if bytes.Equal(leaf.getKey(), keyS) {
 				ref.deleteChild(keyS[depth])
 				t.size--
 				return true
@@ -1467,91 +1453,91 @@ func (t *compoundSortedTree[K, V]) Insert(key K, val V) {
 	depth := 0
 
 	for ref.pointer != nil {
-		if ref.tag == nodeKindLeaf {
-			nl := (*compoundLeafNode[V])(ref.pointer)
+		if ref.tag != nodeKindLeaf {
+			node := ref.node()
+			if node.prefixLen != 0 {
+				prefixDiff := prefixMismatch[V, *compoundLeafNode[V]](n, keyS, depth)
 
-			if bytes.Compare(keyS, nl.getKey()) == 0 {
-				nl.setValue(val)
+				if prefixDiff >= int(node.prefixLen) {
+					depth += int(node.prefixLen)
+					goto CONTINUE_SEARCH
+				}
+
+				newNode := nodePools[nodeKind4].Get().(*node4)
+
+				*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
+
+				newNode.prefixLen = uint32(prefixDiff)
+				newNode.prefix = node.prefix
+
+				if node.prefixLen <= maxPrefixLen {
+					newNode.addChild(ref, node.prefix[prefixDiff], n)
+					loLimit := prefixDiff + 1
+					node.prefixLen -= uint32(loLimit)
+					copy(node.prefix[:], node.prefix[loLimit:])
+				} else {
+					node.prefixLen -= uint32(prefixDiff + 1)
+					leafMin := (*compoundLeafNode[V])(minimum[V](n))
+					leafKey := leafMin.getTransformKey()
+
+					newNode.addChild(ref, leafKey[depth+prefixDiff], n)
+					loLimit := depth + prefixDiff + 1
+					copy(node.prefix[:], leafKey[loLimit:])
+				}
+
+				if depth+prefixDiff >= len(keyS) {
+					return
+				}
+				leafRef := nodeRef{pointer: createLeaf(), tag: nodeKindLeaf}
+				newNode.addChild(ref, keyS[depth+prefixDiff], leafRef)
 				return
 			}
 
-			leafKey := nl.getTransformKey()
-			newNode := nodePools[nodeKind4].Get().(*node4)
-
-			longestPrefix := longestCommonPrefix(leafKey, keyS, depth)
-			newNode.prefixLen = uint32(longestPrefix)
-
-			copy(newNode.prefix[:], keyS[depth:])
-
-			*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
-
-			splitPrefix := int(depth + longestPrefix)
-			if splitPrefix < len(leafKey) {
-				newNode.addChild(ref, leafKey[splitPrefix], n)
+		CONTINUE_SEARCH:
+			if depth >= len(keyS) {
+				return
 			}
 
-			if splitPrefix < len(keyS) {
-				leafRef := nodeRef{pointer: createLeaf(), tag: nodeKindLeaf}
-				newNode.addChild(ref, keyS[splitPrefix], leafRef)
+			child := ref.findChild(keyS[depth])
+			if child != nil {
+				n = *child
+				ref = child
+				depth++
+				continue
 			}
+
+			leafRef := nodeRef{pointer: createLeaf(), tag: nodeKindLeaf}
+			ref.addChild(keyS[depth], leafRef)
 			t.size++
 			return
 		}
 
-		node := ref.node()
-		if node.prefixLen != 0 {
-			prefixDiff := prefixMismatch[V, *compoundLeafNode[V]](n, keyS, depth)
+		nl := (*compoundLeafNode[V])(ref.pointer)
 
-			if prefixDiff >= int(node.prefixLen) {
-				depth += int(node.prefixLen)
-				goto CONTINUE_SEARCH
-			}
+		if bytes.Equal(keyS, nl.getKey()) {
+			nl.value = val
+			return
+		}
 
-			newNode := nodePools[nodeKind4].Get().(*node4)
+		leafKey := nl.getTransformKey()
+		newNode := nodePools[nodeKind4].Get().(*node4)
 
-			*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
+		longestPrefix := longestCommonPrefix(leafKey, keyS, depth)
+		newNode.prefixLen = uint32(longestPrefix)
 
-			newNode.prefixLen = uint32(prefixDiff)
-			newNode.prefix = node.prefix
+		copy(newNode.prefix[:], keyS[depth:])
 
-			if node.prefixLen <= maxPrefixLen {
-				newNode.addChild(ref, node.prefix[prefixDiff], n)
-				loLimit := prefixDiff + 1
-				node.prefixLen -= uint32(loLimit)
-				copy(node.prefix[:], node.prefix[loLimit:])
-			} else {
-				node.prefixLen -= uint32(prefixDiff + 1)
-				leafMin := (*compoundLeafNode[V])(minimum[V](n))
-				leafKey := leafMin.getTransformKey()
+		*ref = nodeRef{pointer: unsafe.Pointer(newNode), tag: nodeKind4}
 
-				newNode.addChild(ref, leafKey[depth+prefixDiff], n)
-				loLimit := depth + prefixDiff + 1
-				copy(node.prefix[:], leafKey[loLimit:])
-			}
+		splitPrefix := int(depth + longestPrefix)
+		if splitPrefix < len(leafKey) {
+			newNode.addChild(ref, leafKey[splitPrefix], n)
+		}
 
-			if depth+prefixDiff >= len(keyS) {
-				return
-			}
+		if splitPrefix < len(keyS) {
 			leafRef := nodeRef{pointer: createLeaf(), tag: nodeKindLeaf}
-			newNode.addChild(ref, keyS[depth+prefixDiff], leafRef)
-			return
+			newNode.addChild(ref, keyS[splitPrefix], leafRef)
 		}
-
-	CONTINUE_SEARCH:
-		if depth >= len(keyS) {
-			return
-		}
-
-		child := ref.findChild(keyS[depth])
-		if child != nil {
-			n = *child
-			ref = child
-			depth++
-			continue
-		}
-
-		leafRef := nodeRef{pointer: createLeaf(), tag: nodeKindLeaf}
-		ref.addChild(keyS[depth], leafRef)
 		t.size++
 		return
 	}
@@ -1604,69 +1590,68 @@ func (t *compoundSortedTree[K, V]) Search(key K) (V, bool) {
 	depth := 0
 
 	for n.pointer != nil {
-		if n.tag == nodeKindLeaf {
-			leaf := (*compoundLeafNode[V])(n.pointer)
+		if n.tag != nodeKindLeaf {
+			node := n.node()
+			if node.prefixLen != 0 {
+				prefixLen := node.checkPrefix(keyS, depth)
 
-			if bytes.Compare(leaf.getKey(), keyS) == 0 {
-				return leaf.getValue(), true
+				if prefixLen != int(min(maxPrefixLen, node.prefixLen)) {
+					return notFound, false
+				}
+
+				depth += int(node.prefixLen)
 			}
-			return notFound, false
+
+			b := keyS[depth]
+			switch n.tag {
+			case nodeKind4:
+				n4 := (*node4)(n.pointer)
+
+				if i := searchNode4(n4.keys, b); i != -1 && i < int(n4.childrenLen) {
+					n = n4.children[i]
+					depth++
+					continue
+				}
+
+			case nodeKind16:
+				n16 := (*node16)(n.pointer)
+
+				if idx := searchNode16(&n16.keys, n16.childrenLen, b); idx != -1 {
+					n = n16.children[idx]
+					depth++
+					continue
+				}
+
+			case nodeKind48:
+				n48 := (*node48)(n.pointer)
+
+				if i := n48.keys[b]; i != 0 {
+					n = n48.children[i-1]
+					depth++
+					continue
+				}
+
+			case nodeKind256:
+				n256 := (*node256)(n.pointer)
+
+				if n256.children[b].pointer != nil {
+					n = n256.children[b]
+					depth++
+					continue
+				}
+
+			default:
+				panic("shouldn't be possible!")
+			}
+			break
 		}
 
-		node := n.node()
-		if node.prefixLen != 0 {
-			prefixLen := node.checkPrefix(keyS, depth)
+		leaf := (*compoundLeafNode[V])(n.pointer)
 
-			if prefixLen != int(min(maxPrefixLen, node.prefixLen)) {
-				return notFound, false
-			}
-
-			depth += int(node.prefixLen)
+		if bytes.Equal(leaf.getKey(), keyS) {
+			return leaf.value, true
 		}
-
-		b := keyS[depth]
-		switch n.tag {
-		case nodeKind4:
-			n4 := (*node4)(n.pointer)
-
-			if i := searchNode4(n4.keys, b); i != -1 && i < int(n4.childrenLen) {
-				n = n4.children[i]
-				depth++
-				continue
-			}
-
-		case nodeKind16:
-			n16 := (*node16)(n.pointer)
-
-			if idx := searchNode16(&n16.keys, n16.childrenLen, b); idx != -1 {
-				n = n16.children[idx]
-				depth++
-				continue
-			}
-
-		case nodeKind48:
-			n48 := (*node48)(n.pointer)
-
-			if i := n48.keys[b]; i != 0 {
-				n = n48.children[i-1]
-				depth++
-				continue
-			}
-
-		case nodeKind256:
-			n256 := (*node256)(n.pointer)
-
-			if n256.children[b].pointer != nil {
-				n = n256.children[b]
-				depth++
-				continue
-			}
-
-		default:
-			panic("shouldn't be possible!")
-		}
-
-		break
+		return notFound, false
 	}
 
 	return notFound, false
