@@ -267,27 +267,64 @@ func (t *{{ .Name }}[K, V]) Prefix(p K) iter.Seq2[K, V] {
 }
 
 func (t *{{ .Name }}[K, V]) Range(start, end K) iter.Seq2[K, V] {
-     	{{ if .HasRange }}
-        	if len(end) == 0 {
-        		end, _ = t.restoreKey(maximum[V](t.root))
-        	}
-        
-        	if bytes.Compare([]byte(start), []byte(end)) > 0 { // start > end
-        		// IDEA: maybe do the iteration in reverse instead?
-        		start, end = end, start
-        	}
-        
-        	startKey := []byte(start)
-        	{{if .AddNullByte}}
-        	     startKey = append(startKey, '\x00')
-        	{{end}}
-        	endKey := []byte(end)
-        	{{if .AddNullByte}}
-        	     endKey = append(endKey, '\x00')
-        	{{end}}
-        	return rangeScan[K, V, *{{ .NodeName }}[V]](t.root, startKey, endKey, startKey, endKey, t.restoreKey)
+        {{ if .CompoundKey }}
+	  startKey, _ := t.bck.Transform(start)
+	  endKey, _ := t.bck.Transform(end)
+
+	  if len(endKey) == 0 {
+		end, _ = t.restoreKey(maximum[V](t.root))
+		endKey, _ = t.bck.Transform(end) // NOT GREAT!
+	  }
+
+	  if bytes.Compare(startKey, endKey) > 0 { // start > end
+		// IDEA: maybe do the iteration in reverse instead?
+		startKey, endKey = endKey, startKey
+	  }
+
+	  return rangeScan[K, V, *compoundLeafNode[V]](t.root, startKey, endKey, startKey, endKey, t.restoreKey)
+
+     	{{ else if .ComparableKeys }}
+	   if start == end {
+		return func(yield func(K, V) bool) {
+			val, ok := t.Search(start)
+			if !ok {
+				return
+			}
+
+			if !yield(start, val) {
+				return
+			}
+		}
+	   }
+
+	   if start > end {
+		// IDEA: maybe do the iteration in reverse instead?
+		start, end = end, start
+	   }
+
+	   startKey, _ := t.bck.Transform(start)
+	   endKey, _ := t.bck.Transform(end)
+
+	   return rangeScan[K, V, *unsignedLeafNode[V]](t.root, startKey, endKey, startKey, endKey, t.restoreKey)
 	{{ else }}
-	   panic("")
+	   if len(end) == 0 {
+        	end, _ = t.restoreKey(maximum[V](t.root))
+           }
+        
+           if bytes.Compare([]byte(start), []byte(end)) > 0 { // start > end
+              // IDEA: maybe do the iteration in reverse instead?
+              start, end = end, start
+           }
+        
+	   startKey := []byte(start)
+           {{if .AddNullByte}}
+       	   	startKey = append(startKey, '\x00')
+            {{end}}
+        	endKey := []byte(end)
+            {{if .AddNullByte}}
+        	endKey = append(endKey, '\x00')
+            {{end}}
+            return rangeScan[K, V, *{{ .NodeName }}[V]](t.root, startKey, endKey, startKey, endKey, t.restoreKey)
 	{{ end }}
 }
 

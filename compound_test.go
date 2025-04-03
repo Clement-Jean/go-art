@@ -3,13 +3,14 @@ package art_test
 import (
 	"fmt"
 	"math/bits"
+	"slices"
 	"testing"
 
 	"github.com/Clement-Jean/go-art"
 )
 
 type Account struct {
-	ID uint
+	ID   uint
 	name string
 }
 
@@ -23,7 +24,7 @@ func (ak AccountKey) Transform(a Account) ([]byte, []byte) {
 	var (
 		ubk art.UnsignedBinaryKey[uint]
 		aok art.AlphabeticalOrderKey[string]
-		b []byte
+		b   []byte
 	)
 
 	_, c := ubk.Transform(a.ID)
@@ -34,7 +35,7 @@ func (ak AccountKey) Transform(a Account) ([]byte, []byte) {
 }
 func (ak AccountKey) Restore(b []byte) Account {
 	var (
-		a Account
+		a   Account
 		ubk art.UnsignedBinaryKey[uint]
 		aok art.AlphabeticalOrderKey[string]
 	)
@@ -66,5 +67,75 @@ func TestCompound(t *testing.T) {
 		if v != 1 {
 			t.Fatalf("expected value of 1, got %d", v)
 		}
+	}
+}
+
+func TestCompoundRange(t *testing.T) {
+	tests := []struct {
+		name           string
+		start, end     Account
+		keys, expected []Account
+	}{
+		{
+			name:  "start<end",
+			start: Account{ID: 0}, end: Account{ID: 7},
+			keys: []Account{
+				{ID: 0}, {ID: 1}, {ID: 2}, {ID: 3}, {ID: 4}, {ID: 5}, {ID: 6}, {ID: 7},
+				{ID: 8}, {ID: 9}, {ID: 10}, {ID: 11}, {ID: 12}, {ID: 13}, {ID: 14}, {ID: 15},
+			},
+			expected: []Account{
+				{ID: 0}, {ID: 1}, {ID: 2}, {ID: 3}, {ID: 4}, {ID: 5}, {ID: 6}, {ID: 7},
+			},
+		},
+		{
+			name:  "start>end",
+			start: Account{ID: 7}, end: Account{ID: 0},
+			keys: []Account{
+				{ID: 0}, {ID: 1}, {ID: 2}, {ID: 3}, {ID: 4}, {ID: 5}, {ID: 6}, {ID: 7},
+				{ID: 8}, {ID: 9}, {ID: 10}, {ID: 11}, {ID: 12}, {ID: 13}, {ID: 14}, {ID: 15},
+			},
+			expected: []Account{
+				{ID: 0}, {ID: 1}, {ID: 2}, {ID: 3}, {ID: 4}, {ID: 5}, {ID: 6}, {ID: 7},
+			},
+		},
+		{
+			name:  "start==end",
+			start: Account{ID: 7}, end: Account{ID: 7},
+			keys: []Account{
+				{ID: 0}, {ID: 1}, {ID: 2}, {ID: 3}, {ID: 4}, {ID: 5}, {ID: 6}, {ID: 7},
+				{ID: 8}, {ID: 9}, {ID: 10}, {ID: 11}, {ID: 12}, {ID: 13}, {ID: 14}, {ID: 15},
+			},
+			expected: []Account{{ID: 7}},
+		},
+		{
+			name:  "outside of range",
+			start: Account{ID: 16}, end: Account{ID: 20},
+			keys: []Account{
+				{ID: 0}, {ID: 1}, {ID: 2}, {ID: 3}, {ID: 4}, {ID: 5}, {ID: 6}, {ID: 7},
+				{ID: 8}, {ID: 9}, {ID: 10}, {ID: 11}, {ID: 12}, {ID: 13}, {ID: 14}, {ID: 15},
+			},
+			expected: []Account{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("range-%s", tt.name), func(t *testing.T) {
+			acc := AccountKey{}
+			tr := art.NewCompoundTree[Account, Account](acc)
+
+			for _, key := range tt.keys {
+				tr.Insert(key, key)
+			}
+
+			var res []Account
+			for key, _ := range tr.Range(tt.start, tt.end) {
+				res = append(res, key)
+			}
+
+			if !slices.Equal(tt.expected, res) {
+				fmt.Printf("%v %v\n", tt.expected, res)
+				t.Fatal("slices are not the same")
+			}
+		})
 	}
 }

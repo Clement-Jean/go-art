@@ -1,6 +1,7 @@
 package art_test
 
 import (
+	"fmt"
 	"math"
 	"slices"
 	"testing"
@@ -129,5 +130,70 @@ func TestBinaryFloatBackward64(t *testing.T) {
 		if math.Abs(f-expected[i]) > float64EqualityThreshold {
 			t.Fatalf("expected %v, got %v", expected, got)
 		}
+	}
+}
+
+func TestFloatRange(t *testing.T) {
+	tests := []struct {
+		name           string
+		start, end     float64
+		keys, expected []float64
+	}{
+		{
+			name:  "start<end",
+			start: 0, end: 7,
+			keys:     []float64{-0.1234, 1.1234, 2.1234, -3.1234, 4.1234, 5.1234, 6.1234, 7.1234, 8.1234, 9.1234, 10.1234, 11.1234, 12.1234, 13.1234, 14.1234, 15.1234},
+			expected: []float64{1.1234, 2.1234, 4.1234, 5.1234, 6.1234},
+		},
+		{
+			name:  "start>end",
+			start: 7, end: 0,
+			keys:     []float64{-0.1234, 1.1234, 2.1234, -3.1234, 4.1234, 5.1234, 6.1234, 7.1234, 8.1234, 9.1234, 10.1234, 11.1234, 12.1234, 13.1234, 14.1234, 15.1234},
+			expected: []float64{1.1234, 2.1234, 4.1234, 5.1234, 6.1234},
+		},
+		{
+			name:  "start==end",
+			start: -7.1234, end: -7.1234,
+			keys:     []float64{0.1234, 1.1234, 2.1234, 3.1234, 4.1234, 5.1234, 6.1234, -7.1234, 8.1234, 9.1234, 10.1234, 11.1234, 12.1234, 13.1234, 14.1234, 15.1234},
+			expected: []float64{-7.1234},
+		},
+		{
+			name:  "outside of range",
+			start: 16, end: 20,
+			keys:     []float64{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
+			expected: []float64{},
+		},
+		{
+			name:  "Inf",
+			start: math.Inf(-1), end: math.Inf(1),
+			keys:     []float64{math.NaN(), 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
+			expected: []float64{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
+		},
+		// { // Comparing NaN leads to slices not equal
+		// 	name:  "NaN",
+		// 	start: math.NaN(), end: math.Inf(1),
+		// 	keys:     []float64{math.NaN(), 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
+		// 	expected: []float64{math.NaN(), 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
+		// },
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("range-%s", tt.name), func(t *testing.T) {
+			tr := art.NewFloatBinaryTree[float64, float64]()
+
+			for _, key := range tt.keys {
+				tr.Insert(key, key)
+			}
+
+			var res []float64
+			for key, _ := range tr.Range(tt.start, tt.end) {
+				res = append(res, key)
+			}
+
+			if !slices.Equal(tt.expected, res) {
+				fmt.Printf("%v %v\n", tt.expected, res)
+				t.Fatal("slices are not the same")
+			}
+		})
 	}
 }

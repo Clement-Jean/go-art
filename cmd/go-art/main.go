@@ -11,13 +11,14 @@ import (
 var codeTmpl embed.FS
 
 type Tree struct {
-	KeysConstraint string
-	Name           string
-	NodeName       string
-	KeyName        string
-	AddNullByte    bool
+	KeysConstraint              string
+	Name                        string
+	NodeName                    string
+	KeyName                     string
+	AddNullByte                 bool
+	ComparableKeys, CompoundKey bool
 
-	HasRange, HasPrefix bool
+	HasPrefix bool
 }
 
 func main() {
@@ -28,9 +29,10 @@ func main() {
 			NodeName:       "alphaLeafNode",
 			KeyName:        "AlphabeticalOrderKey",
 
-			AddNullByte: true,
-			HasRange:    true,
-			HasPrefix:   true,
+			AddNullByte:    true,
+			ComparableKeys: false,
+			HasPrefix:      true,
+			CompoundKey:    false,
 		},
 		{
 			KeysConstraint: "uints",
@@ -38,7 +40,9 @@ func main() {
 			NodeName:       "unsignedLeafNode",
 			KeyName:        "UnsignedBinaryKey",
 
-			AddNullByte: false,
+			AddNullByte:    false,
+			ComparableKeys: true,
+			CompoundKey:    false,
 		},
 		{
 			KeysConstraint: "ints",
@@ -46,7 +50,9 @@ func main() {
 			NodeName:       "signedLeafNode",
 			KeyName:        "SignedBinaryKey",
 
-			AddNullByte: false,
+			AddNullByte:    false,
+			ComparableKeys: true,
+			CompoundKey:    false,
 		},
 		{
 			KeysConstraint: "floats",
@@ -54,7 +60,9 @@ func main() {
 			NodeName:       "floatLeafNode",
 			KeyName:        "FloatBinaryKey",
 
-			AddNullByte: false,
+			AddNullByte:    false,
+			ComparableKeys: true,
+			CompoundKey:    false,
 		},
 		{
 			KeysConstraint: "any",
@@ -62,7 +70,9 @@ func main() {
 			NodeName:       "compoundLeafNode",
 			KeyName:        "BinaryComparableKey",
 
-			AddNullByte: false,
+			AddNullByte:    false,
+			ComparableKeys: false,
+			CompoundKey:    true,
 		},
 	}
 

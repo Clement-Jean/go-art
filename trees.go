@@ -605,7 +605,28 @@ func (t *unsignedSortedTree[K, V]) Prefix(p K) iter.Seq2[K, V] {
 
 func (t *unsignedSortedTree[K, V]) Range(start, end K) iter.Seq2[K, V] {
 
-	panic("")
+	if start == end {
+		return func(yield func(K, V) bool) {
+			val, ok := t.Search(start)
+			if !ok {
+				return
+			}
+
+			if !yield(start, val) {
+				return
+			}
+		}
+	}
+
+	if start > end {
+		// IDEA: maybe do the iteration in reverse instead?
+		start, end = end, start
+	}
+
+	startKey, _ := t.bck.Transform(start)
+	endKey, _ := t.bck.Transform(end)
+
+	return rangeScan[K, V, *unsignedLeafNode[V]](t.root, startKey, endKey, startKey, endKey, t.restoreKey)
 
 }
 
@@ -929,7 +950,28 @@ func (t *signedSortedTree[K, V]) Prefix(p K) iter.Seq2[K, V] {
 
 func (t *signedSortedTree[K, V]) Range(start, end K) iter.Seq2[K, V] {
 
-	panic("")
+	if start == end {
+		return func(yield func(K, V) bool) {
+			val, ok := t.Search(start)
+			if !ok {
+				return
+			}
+
+			if !yield(start, val) {
+				return
+			}
+		}
+	}
+
+	if start > end {
+		// IDEA: maybe do the iteration in reverse instead?
+		start, end = end, start
+	}
+
+	startKey, _ := t.bck.Transform(start)
+	endKey, _ := t.bck.Transform(end)
+
+	return rangeScan[K, V, *unsignedLeafNode[V]](t.root, startKey, endKey, startKey, endKey, t.restoreKey)
 
 }
 
@@ -1253,7 +1295,28 @@ func (t *floatSortedTree[K, V]) Prefix(p K) iter.Seq2[K, V] {
 
 func (t *floatSortedTree[K, V]) Range(start, end K) iter.Seq2[K, V] {
 
-	panic("")
+	if start == end {
+		return func(yield func(K, V) bool) {
+			val, ok := t.Search(start)
+			if !ok {
+				return
+			}
+
+			if !yield(start, val) {
+				return
+			}
+		}
+	}
+
+	if start > end {
+		// IDEA: maybe do the iteration in reverse instead?
+		start, end = end, start
+	}
+
+	startKey, _ := t.bck.Transform(start)
+	endKey, _ := t.bck.Transform(end)
+
+	return rangeScan[K, V, *unsignedLeafNode[V]](t.root, startKey, endKey, startKey, endKey, t.restoreKey)
 
 }
 
@@ -1577,7 +1640,20 @@ func (t *compoundSortedTree[K, V]) Prefix(p K) iter.Seq2[K, V] {
 
 func (t *compoundSortedTree[K, V]) Range(start, end K) iter.Seq2[K, V] {
 
-	panic("")
+	startKey, _ := t.bck.Transform(start)
+	endKey, _ := t.bck.Transform(end)
+
+	if len(endKey) == 0 {
+		end, _ = t.restoreKey(maximum[V](t.root))
+		endKey, _ = t.bck.Transform(end) // NOT GREAT!
+	}
+
+	if bytes.Compare(startKey, endKey) > 0 { // start > end
+		// IDEA: maybe do the iteration in reverse instead?
+		startKey, endKey = endKey, startKey
+	}
+
+	return rangeScan[K, V, *compoundLeafNode[V]](t.root, startKey, endKey, startKey, endKey, t.restoreKey)
 
 }
 
