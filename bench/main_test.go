@@ -58,6 +58,7 @@ func BenchmarkGoARTUpdate(b *testing.B) {
 		})
 	}
 }
+
 func BenchmarkOriginalGoARTUpdate(b *testing.B) {
 	tree := oart.NewArtTree()
 
@@ -77,6 +78,7 @@ func BenchmarkOriginalGoARTUpdate(b *testing.B) {
 		})
 	}
 }
+
 func BenchmarkGoAdaptiveRadixTreeUpdate(b *testing.B) {
 	tree := gart.New()
 
@@ -107,14 +109,16 @@ func BenchmarkGoARTInsert(b *testing.B) {
 				w := words[i]
 				tree.Insert(w, w)
 
-				if i == size-1 {
+				i = (i + 1) % size
+
+				if i == 0 {
 					tree = art.NewAlphaSortedTree[[]byte, []byte]()
 				}
-				i = (i + 1) % size
 			}
 		})
 	}
 }
+
 func BenchmarkGoAdaptiveRadixTreeInsert(b *testing.B) {
 	for _, size := range sizes {
 		b.Run(fmt.Sprintf("insert_size_%d", size), func(b *testing.B) {
@@ -125,14 +129,16 @@ func BenchmarkGoAdaptiveRadixTreeInsert(b *testing.B) {
 				w := words[i]
 				tree.Insert(w, w)
 
-				if i == size-1 {
+				i = (i + 1) % size
+
+				if i == 0 {
 					tree = gart.New()
 				}
-				i = (i + 1) % size
 			}
 		})
 	}
 }
+
 func BenchmarkOriginalGoARTInsert(b *testing.B) {
 	for _, size := range sizes {
 		b.Run(fmt.Sprintf("insert_size_%d", size), func(b *testing.B) {
@@ -143,10 +149,11 @@ func BenchmarkOriginalGoARTInsert(b *testing.B) {
 				w := words[i]
 				tree.Insert(w, w)
 
-				if i == size-1 {
+				i = (i + 1) % size
+
+				if i == 0 {
 					tree = oart.NewArtTree()
 				}
-				i = (i + 1) % size
 			}
 		})
 	}
@@ -171,6 +178,7 @@ func BenchmarkGoARTSearch(b *testing.B) {
 		})
 	}
 }
+
 func BenchmarkGoAdaptiveRadixTreeSearch(b *testing.B) {
 	tree := gart.New()
 
@@ -190,6 +198,7 @@ func BenchmarkGoAdaptiveRadixTreeSearch(b *testing.B) {
 		})
 	}
 }
+
 func BenchmarkOriginalGoARTSearch(b *testing.B) {
 	tree := oart.NewArtTree()
 
